@@ -102,7 +102,7 @@
   (let loop ([addrs seeds])
     (if (null? addrs)
       (if (>= (current-millisecond) timeout-limit)
-        (error <mongo-error> "could not connect to server")
+        (error <mongo-error> :reason #f "could not connect to server")
         (begin (sys-nanosleep #e5e8)
                (loop seeds)))
       (or (and-let* ([node (mongo-node-connect* (car addrs))]
@@ -126,7 +126,7 @@
         (values (~ master 0) (and slave (~ slave 0)))
         (begin (when slave (mongo-node-disconnect! (~ slave 0)))
                (if (>= (current-millisecond) timeout-limit)
-                 (error <mongo-error> "could not connect to master")
+                 (error <mongo-error> :reason #f "could not connect to master")
                  (begin (sys-nanosleep #e5e8)
                         (loop seeds #f #f)))))
       (if-let1 node (mongo-node-connect* (car addrs))

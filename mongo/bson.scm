@@ -51,9 +51,13 @@
           BSON_TYPE_MIN_KEY
           BSON_TYPE_MAX_KEY
           <bson-error>
+          bson-error?
           <bson-read-error>
+          bson-read-error?
           <bson-write-error>
+          bson-write-error?
           <bson-construct-error>
+          bson-construct-error?
           prepare-fold
           bson-int32?
           write-bson-int32-prepare
@@ -229,10 +233,17 @@
 
 ;;;; condition
 
-(define-condition-type <bson-error> <mongo-error> #f)
-(define-condition-type <bson-read-error> <bson-error> #f)
-(define-condition-type <bson-write-error> <bson-error> #f)
-(define-condition-type <bson-construct-error> <bson-error> #f)
+(define-condition-type <bson-error> <mongo-error>
+  bson-error?)
+
+(define-condition-type <bson-read-error> <bson-error>
+  bson-read-error?)
+
+(define-condition-type <bson-write-error> <bson-error>
+  bson-write-error?)
+
+(define-condition-type <bson-construct-error> <bson-error>
+  bson-construct-error?)
 
 ;;;; util
 
@@ -260,8 +271,10 @@
   (let* ([u8v (make-u8vector n)]
          [res (read-block! u8v iport)])
     (cond
-     [(eof-object? res) (error <bson-read-error> "unexpected EOF")]
-     [(not (= n res))   (errorf <bson-read-error> "expected ~s byte: ~s" n res)]
+     [(eof-object? res)
+      (error <bson-read-error> :reason #f "unexpected EOF")]
+     [(not (= n res))
+      (errorf <bson-read-error> :reason #f "expected ~s byte: ~s" n res)]
      [else u8v])))
 
 ;;;; int32
@@ -279,7 +292,7 @@
 (define (read-bson-int32 iport)
   (let1 int (read-s32 iport 'little-endian)
     (if (eof-object? int)
-      (error <bson-read-error> "unexpected EOF")
+      (error <bson-read-error> :reason #f "unexpected EOF")
       int)))
 
 ;;;; int64
@@ -297,7 +310,7 @@
 (define (read-bson-int64 iport)
   (let1 int (read-s64 iport 'little-endian)
     (if (eof-object? int)
-      (error <bson-read-error> "unexpected EOF")
+      (error <bson-read-error> :reason #f "unexpected EOF")
       int)))
 
 ;;;; double
@@ -316,7 +329,7 @@
 (define (read-bson-double iport)
   (let1 num (read-f64 iport 'little-endian)
     (if (eof-object? num)
-      (error <bson-read-error> "unexpected EOF")
+      (error <bson-read-error> :reason #f "unexpected EOF")
       num)))
 
 ;;;; string
@@ -331,7 +344,8 @@
             (^[oport]
               (write-bson-int32 size oport)
               (if (string-incomplete? str)
-                (error <bson-write-error> "expected complete string:" str)
+                (error <bson-write-error> :reason #f
+                       "expected complete string:" str)
                 (write-block (string->u8vector str) oport))
               (write-byte BSON_ZERO oport)))))
 
@@ -344,11 +358,11 @@
                              [(= (string-size str) str-size)]
                              [strc (string-incomplete->complete str)])
                     strc)
-                  (error <bson-read-error> "unexpected input:" str)))
+                  (error <bson-read-error> :reason #f "unexpected input:" str)))
             (let1 zero (read-byte iport)
               (or (and (not (eof-object? zero))
                        (= zero BSON_ZERO))
-                  (error <bson-read-error> "expected 0:" zero))))))
+                  (error <bson-read-error> :reason #f "expected 0:" zero))))))
 
 ;;;; cstring
 
@@ -366,9 +380,11 @@
                     (cond [(>= 0 i)
                            (write-byte BSON_ZERO oport)]
                           [(= BSON_ZERO byte)
-                           (error <bson-write-error> "unexpected byte:" byte)]
+                           (error <bson-write-error> :reason #f
+                                  "unexpected byte:" byte)]
                           [(eof-object? byte)
-                           (error <bson-write-error> "unexpected EOF")]
+                           (error <bson-write-error> :reason #f
+                                  "unexpected EOF")]
                           [else
                            (write-byte byte oport)
                            (loop (- i 1) (read-byte str-iport))]))))))))
@@ -379,7 +395,8 @@
   (call-with-output-string
     (^[str-oport]
       (let loop ([byte (read-byte iport)])
-        (cond [(eof-object? byte) (error <bson-read-error> "unexpected EOF")]
+        (cond [(eof-object? byte)
+               (error <bson-read-error> :reason #f "unexpected EOF")]
               [(not (= byte BSON_ZERO))
                (write-byte byte str-oport)
                (loop (read-byte iport))])))))
@@ -404,7 +421,7 @@
             (write-byte
              (cond [(eq? bson-bool 'false) BSON_FALSE]
                    [(eq? bson-bool 'true)  BSON_TRUE]
-                   [else (error <bson-write-error>
+                   [else (error <bson-write-error> :reason #f
                                 "unexpected symbol:" bson-bool)])
              oport))))
 
@@ -414,7 +431,7 @@
   (let1 byte (read-byte iport)
     (cond [(= byte BSON_FALSE) 'false]
           [(= byte BSON_TRUE)  'true]
-          [else (error <bson-read-error> "unexpected byte:" byte)])))
+          [else (error <bson-read-error> :reason #f "unexpected byte:" byte)])))
 
 ;;;; undefined
 
@@ -453,7 +470,7 @@
                                    BSON_SUBTYPE_MD5]
                                   [(eq? type 'user-defined)
                                    BSON_SUBTYPE_USER_DEFINED]
-                                  [else (error <bson-write-error>
+                                  [else (error <bson-write-error> :reason #f
                                                "unexpected type:" type)]))
                           oport)
               (write-block bytes-u8v oport)))))
@@ -470,7 +487,8 @@
            [(= subtype BSON_SUBTYPE_UUID)         'uuid]
            [(= subtype BSON_SUBTYPE_MD5)          'md5]
            [(= subtype BSON_SUBTYPE_USER_DEFINED) 'user-defined]
-           [else (error <bson-read-error> "unexpected byte:" subtype)])
+           [else (error <bson-read-error> :reason #f
+                        "unexpected byte:" subtype)])
      (read-nbyte-to-u8vector bytes-size iport))))
 
 (define-method object-equal? ((bin1 <bson-binary>) (bin2 <bson-binary>))
@@ -488,7 +506,7 @@
 (define-method bson-binary ((type <symbol>) (u8v <u8vector>))
   (case type
     [(generic function old uuid md5 user-defined) (make-bson-binary type u8v)]
-    [else (error <bson-construct-error> "unexpected type:" type)]))
+    [else (error <bson-construct-error> :reason #f "unexpected type:" type)]))
 
 ;;;; code
 
@@ -541,7 +559,7 @@
 
 (define-method bson-code/scope ((str <string>) (scope <list>))
   (unless (bson-document? scope)
-    (error <bson-construct-error> "unexpected type:" scope))
+    (error <bson-construct-error> :reason #f "unexpected type:" scope))
   (make-bson-code/scope str scope))
 
 (define-method bson-code ((str <string>) (scope <list>))
@@ -593,13 +611,13 @@
 
 (define (bson-object-id t m p i)
   (unless (<= -2147483648 t 2147483647)
-    (error <bson-construct-error> "argument out of range:" t))
+    (error <bson-construct-error> :reason #f "argument out of range:" t))
   (unless (<= 0 m 16777215)
-    (error <bson-construct-error> "argument out of range:" m))
+    (error <bson-construct-error> :reason #f "argument out of range:" m))
   (unless (<= 0 p 65535)
-    (error <bson-construct-error> "argument out of range:" p))
+    (error <bson-construct-error> :reason #f "argument out of range:" p))
   (unless (<= 0 i 16777215)
-    (error <bson-construct-error> "argument out of range:" i))
+    (error <bson-construct-error> :reason #f "argument out of range:" i))
   (make-bson-object-id
    (rlet1 uv (make-u8vector BSON_OBJECT_ID_SIZE)
      (put-s32be! uv 0 t)
@@ -616,7 +634,7 @@
 
 (define-method bson-object-id ((str <string>))
   (unless (= (string-length str) 24)
-    (error <bson-construct-error> "unexpected length:" str))
+    (error <bson-construct-error> :reason #f "unexpected length:" str))
   (make-bson-object-id
    (rlet1 u8v (make-u8vector BSON_OBJECT_ID_SIZE)
      (call-with-input-string str
@@ -626,13 +644,14 @@
              (let* ([s (read-block 2 str-iport)]
                     [n (string->number s 16)])
                (unless (integer? n)
-                 (error <bson-construct-error> "unexpected input:" s))
+                 (error <bson-construct-error> :reason #f
+                        "unexpected input:" s))
                (u8vector-set! u8v i n))
              (loop (+ i 1)))))))))
 
 (define-method bson-object-id ((u8v <u8vector>))
   (unless (= (u8vector-length u8v) BSON_OBJECT_ID_SIZE)
-    (error <bson-construct-error> "unexpected length:" u8v))
+    (error <bson-construct-error> :reason #f "unexpected length:" u8v))
   (make-bson-object-id u8v))
 
 ;;;; datetime
@@ -659,7 +678,7 @@
 
 (define (bson-datetime ms)
   (unless (<= BSON_INT64_MIN ms BSON_INT64_MAX)
-    (error <bson-construct-error> "argument out of range" ms))
+    (error <bson-construct-error> :reason #f "argument out of range" ms))
   (make-bson-datetime ms))
 
 (define-method bson-datetime ()
@@ -777,9 +796,9 @@
 
 (define (bson-timestamp t i)
   (unless (<= -2147483648 t 2147483647)
-    (error <bson-construct-error> "argument out of range" t))
+    (error <bson-construct-error> :reason #f "argument out of range" t))
   (unless (<= 0 i 4294967295)
-    (error <bson-construct-error> "argument out of range" i))
+    (error <bson-construct-error> :reason #f "argument out of range" i))
   (make-bson-timestamp (logior (ash t 32) i)))
 
 (define-method bson-timestamp (t)
@@ -840,7 +859,8 @@
                 [(bson-array? element-val)
                  (values BSON_TYPE_ARRAY write-bson-array-prepare)]
                 [else
-                 (error <bson-write-error> "unexpected type:" element-val)])]
+                 (error <bson-write-error> :reason #f
+                        "unexpected type:" element-val)])]
          [(key-size write-key) (write-bson-cstring-prepare (car element))]
          [(val-size write-val) (prepare element-val)])
       (values (+ 1 key-size val-size)
@@ -872,52 +892,55 @@
 
 (define (read-bson-element iport)
   (let1 type (read-byte iport)
-    (cond [(eof-object? type) (error <bson-read-error> "unexpected EOF")]
-          [(= type BSON_ZERO) #f]
-          [else (cons (read-bson-cstring iport)
-                      (cond [(= type BSON_TYPE_DOUBLE)
-                             (read-bson-double iport)]
-                            [(= type BSON_TYPE_STRING)
-                             (read-bson-string iport)]
-                            [(= type BSON_TYPE_DOCUMENT)
-                             (read-bson-document iport)]
-                            [(= type BSON_TYPE_ARRAY)
-                             (read-bson-array iport)]
-                            [(= type BSON_TYPE_BINARY)
-                             (read-bson-binary iport)]
-                            [(= type BSON_TYPE_UNDEFINED)
-                             (bson-undefined)]
-                            [(= type BSON_TYPE_OBJECT_ID)
-                             (read-bson-object-id iport)]
-                            [(= type BSON_TYPE_BOOLEAN)
-                             (read-bson-boolean iport)]
-                            [(= type BSON_TYPE_DATETIME)
-                             (read-bson-datetime iport)]
-                            [(= type BSON_TYPE_NULL)
-                             (bson-null)]
-                            [(= type BSON_TYPE_REGEXP)
-                             (read-bson-regexp iport)]
-                            [(= type BSON_TYPE_DBPOINTER)
-                             (read-bson-dbpointer iport)]
-                            [(= type BSON_TYPE_CODE)
-                             (read-bson-code iport)]
-                            [(= type BSON_TYPE_SYMBOL)
-                             (read-bson-symbol iport)]
-                            [(= type BSON_TYPE_CODE/SCOPE)
-                             (read-bson-code/scope iport)]
-                            [(= type BSON_TYPE_INT32)
-                             (read-bson-int32 iport)]
-                            [(= type BSON_TYPE_TIMESTAMP)
-                             (read-bson-timestamp iport)]
-                            [(= type BSON_TYPE_INT64)
-                             (read-bson-int64 iport)]
-                            [(= type BSON_TYPE_MIN_KEY)
-                             (bson-min)]
-                            [(= type BSON_TYPE_MAX_KEY)
-                             (bson-max)]
-                            [else
-                             (error <bson-read-error>
-                                    "unexpected byte:" type)]))])))
+    (cond [(eof-object? type)
+           (error <bson-read-error> :reason #f "unexpected EOF")]
+          [(= type BSON_ZERO)
+           #f]
+          [else
+           (cons (read-bson-cstring iport)
+                 (cond [(= type BSON_TYPE_DOUBLE)
+                        (read-bson-double iport)]
+                       [(= type BSON_TYPE_STRING)
+                        (read-bson-string iport)]
+                       [(= type BSON_TYPE_DOCUMENT)
+                        (read-bson-document iport)]
+                       [(= type BSON_TYPE_ARRAY)
+                        (read-bson-array iport)]
+                       [(= type BSON_TYPE_BINARY)
+                        (read-bson-binary iport)]
+                       [(= type BSON_TYPE_UNDEFINED)
+                        (bson-undefined)]
+                       [(= type BSON_TYPE_OBJECT_ID)
+                        (read-bson-object-id iport)]
+                       [(= type BSON_TYPE_BOOLEAN)
+                        (read-bson-boolean iport)]
+                       [(= type BSON_TYPE_DATETIME)
+                        (read-bson-datetime iport)]
+                       [(= type BSON_TYPE_NULL)
+                        (bson-null)]
+                       [(= type BSON_TYPE_REGEXP)
+                        (read-bson-regexp iport)]
+                       [(= type BSON_TYPE_DBPOINTER)
+                        (read-bson-dbpointer iport)]
+                       [(= type BSON_TYPE_CODE)
+                        (read-bson-code iport)]
+                       [(= type BSON_TYPE_SYMBOL)
+                        (read-bson-symbol iport)]
+                       [(= type BSON_TYPE_CODE/SCOPE)
+                        (read-bson-code/scope iport)]
+                       [(= type BSON_TYPE_INT32)
+                        (read-bson-int32 iport)]
+                       [(= type BSON_TYPE_TIMESTAMP)
+                        (read-bson-timestamp iport)]
+                       [(= type BSON_TYPE_INT64)
+                        (read-bson-int64 iport)]
+                       [(= type BSON_TYPE_MIN_KEY)
+                        (bson-min)]
+                       [(= type BSON_TYPE_MAX_KEY)
+                        (bson-max)]
+                       [else
+                        (error <bson-read-error> :reason #f
+                               "unexpected byte:" type)]))])))
 
 (define (read-bson-document iport)
   (read-bson-int32 iport)

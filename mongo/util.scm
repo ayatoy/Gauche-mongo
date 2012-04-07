@@ -8,6 +8,10 @@
   (use util.list)
   (use util.match)
   (export <mongo-error>
+          mongo-error?
+          mongo-error-reason
+          <mongo-parse-error>
+          mongo-parse-error?
           alist
           %
           alref
@@ -49,7 +53,12 @@
 
 ;;;; condition
 
-(define-condition-type <mongo-error> <error> #f)
+(define-condition-type <mongo-error> <error>
+  mongo-error?
+  (reason mongo-error-reason))
+
+(define-condition-type <mongo-parse-error> <mongo-error>
+  mongo-parse-error?)
 
 ;;;; alist
 
@@ -166,11 +175,14 @@
                   args))))
 
 (define (mongo-ns-parse str)
-  (peg-parse-string ($do [db  ($many1 ($one-of #[^.]))]
-                         [col ($seq ($char #\.) ($many1 ($one-of #[^])))]
-                         ($return (list (list->string db)
-                                        (list->string col))))
-                    str))
+  (guard (e [(<parse-error> e)
+             (error <mongo-parse-error> :reason e
+                    (condition-ref e 'message))])
+    (peg-parse-string ($do [db  ($many1 ($one-of #[^.]))]
+                           [col ($seq ($char #\.) ($many1 ($one-of #[^])))]
+                           ($return (list (list->string db)
+                                          (list->string col))))
+                      str)))
 
 ;;;; uri
 
@@ -233,7 +245,10 @@
   ($sep-by $mongo-uri-address ($char #\,)))
 
 (define (string->mongo-address str)
-  (peg-parse-string $mongo-uri-address str))
+  (guard (e [(<parse-error> e)
+             (error <mongo-parse-error> :reason e
+                    (condition-ref e 'message))])
+    (peg-parse-string $mongo-uri-address str)))
 
 (define %param-char ($one-of #[^=&]))
 
@@ -265,7 +280,10 @@
        ($return (list auth addrs path))))
 
 (define (mongo-uri-parse str)
-  (match (peg-parse-string $mongo-uri str)
+  (match (guard (e [(<parse-error> e)
+                    (error <mongo-parse-error> :reason e
+                           (condition-ref e 'message))])
+           (peg-parse-string $mongo-uri str))
     [(auth addrs (db params))
      (match auth
        [(user pass) (values user pass addrs db params)]

@@ -17,10 +17,15 @@
           MONGO_OP_DELETE
           MONGO_OP_KILL_CURSORS
           <mongo-wire-error>
+          mongo-wire-error?
           <mongo-connect-error>
+          mongo-connect-error?
           <mongo-send-error>
+          mongo-send-error?
           <mongo-recv-error>
+          mongo-recv-error?
           <mongo-exchange-error>
+          mongo-exchange-error?
           mongo-socket-send
           mongo-socket-recv!
           mongo-socket-connect
@@ -115,35 +120,47 @@
 
 ;;;; condition
 
-(define-condition-type <mongo-wire-error> <mongo-error> #f)
-(define-condition-type <mongo-connect-error> <mongo-wire-error> #f)
-(define-condition-type <mongo-send-error> <mongo-wire-error> #f)
-(define-condition-type <mongo-recv-error> <mongo-wire-error> #f)
-(define-condition-type <mongo-exchange-error> <mongo-wire-error> #f)
+(define-condition-type <mongo-wire-error> <mongo-error>
+  mongo-wire-error?)
+
+(define-condition-type <mongo-connect-error> <mongo-wire-error>
+  mongo-connect-error?)
+
+(define-condition-type <mongo-send-error> <mongo-wire-error>
+  mongo-send-error?)
+
+(define-condition-type <mongo-recv-error> <mongo-wire-error>
+  mongo-recv-error?)
+
+(define-condition-type <mongo-exchange-error> <mongo-wire-error>
+  mongo-exchange-error?)
 
 ;;;; io
 
 (define (mongo-socket-send socket u8v)
-  (guard (e [else (error <mongo-send-error> (~ e'message))])
+  (guard (e [else (error <mongo-send-error> :reason e
+                         (condition-ref e 'message))])
     (let loop ([uv u8v] [size (uvector-size u8v)])
       (when (> size 0)
         (let1 sent (socket-send socket uv)
           (when (>= 0 sent)
-            (error <mongo-send-error> "socket-send returned:" sent))
+            (error <mongo-send-error> :reason #f "socket-send returned:" sent))
           (loop (u8vector-copy uv sent) (- size sent)))))))
 
 (define (mongo-socket-recv! socket u8v)
-  (guard (e [else (error <mongo-recv-error> (~ e'message))])
+  (guard (e [else (error <mongo-recv-error> :reason e
+                         (condition-ref e 'message))])
     (let loop ([uv u8v] [size (uvector-size u8v)] [recved 0])
       (when (> size 0)
         (let1 sent (socket-recv! socket uv)
           (when (>= 0 sent)
-            (error <mongo-recv-error> "socket-recv! returned:" sent))
+            (error <mongo-recv-error> :reason #f "socket-recv! returned:" sent))
           (u8vector-copy! u8v recved uv 0 sent)
           (loop (u8vector-copy uv sent) (- size sent) (+ recved sent)))))))
 
 (define (mongo-socket-connect address)
-  (guard (e [(<system-error> e) (error <mongo-connect-error> (~ e'message))])
+  (guard (e [(<system-error> e) (error <mongo-connect-error> :reason e
+                                       (condition-ref e 'message))])
     (cond [(mongo-address-inet? address)
            (make-client-socket 'inet (~ address'host) (~ address'port))]
           [(mongo-address-unix? address)
@@ -197,7 +214,7 @@
          (let ([request-id  (mongo-message-request-id ms)]
                [response-to (mongo-message-response-to reply)])
            (unless (= request-id response-to)
-             (errorf <mongo-exchange-error>
+             (errorf <mongo-exchange-error> :reason #f
                      "unexpected exchange: request-id: ~s, response-to: ~s"
                      request-id response-to))))))
 

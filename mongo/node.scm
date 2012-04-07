@@ -10,6 +10,7 @@
   (use mongo.bson)
   (use mongo.wire)
   (export <mongo-request-error>
+          mongo-request-error?
           <mongo-node>
           mongo-node
           mongo-node?
@@ -75,7 +76,8 @@
 
 ;;;; condition
 
-(define-condition-type <mongo-request-error> <mongo-error> #f)
+(define-condition-type <mongo-request-error> <mongo-error>
+  mongo-request-error?)
 
 ;;;; node
 
@@ -138,7 +140,7 @@
 
 (define (mongo-query-failure reply)
   (if (mongo-message-reply-query-failure? reply)
-    (error <mongo-request-error>
+    (error <mongo-request-error> :reason #f
            (and-let* ([doc (mongo-message-reply-document reply)])
              (assoc-ref doc "$err")))
     reply))
@@ -261,7 +263,7 @@
 (define (mongo-node-command node dn query)
   (rlet1 doc (mongo-node-find1 node dn "$cmd" query)
     (when (zero? (assoc-ref doc "ok"))
-      (error <mongo-request-error> (assoc-ref doc "errmsg")))))
+      (error <mongo-request-error> :reason #f (assoc-ref doc "errmsg")))))
 
 (define (mongo-node-admin node query)
   (mongo-node-command node "admin" query))
@@ -318,7 +320,7 @@
                 ,@(if wtimeout `(("wtimeout" . ,wtimeout)) '())))
     (if-let1 err (assoc-ref doc "err")
       (when (not (eq? 'null err))
-        (error <mongo-request-error> err)))))
+        (error <mongo-request-error> :reason #f err)))))
 
 (define (mongo-node-reset-error node dn)
   (mongo-node-command node dn '(("reseterror" . 1))))
