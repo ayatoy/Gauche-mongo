@@ -583,10 +583,10 @@
   (equal? (bson-object-id-bytes oid1) (bson-object-id-bytes oid2)))
 
 (define-method write-object ((oid <bson-object-id>) oport)
-  (format oport "#<bson-object-id ")
-  (for-each (^[n] (format oport "~2,'0x" n))
-            (bson-object-id-bytes oid))
-  (write-char #\> oport))
+  (format oport "#<bson-object-id ~s>"
+          (call-with-output-string
+            (^[out] (for-each (^[n] (format out "~2,'0x" n))
+                              (bson-object-id-bytes oid))))))
 
 (define (bson-object-id-time oid)
   (get-s32be (bson-object-id-bytes oid) 0))
