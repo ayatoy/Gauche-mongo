@@ -1,0 +1,14 @@
+Simple MongoDB driver for Gauche
+
+Install
+
+  $ git clone foo
+  $ cd Gauche-mongo
+  $ ./DIST gen
+  $ ./configure
+  $ [sudo] make install
+
+Getting Started
+
+  gosh> (use mongo)
+  #<undef>
