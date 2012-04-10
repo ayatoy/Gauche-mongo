@@ -72,6 +72,11 @@
           mongo-dbref-get))
 (select-module mongo.core)
 
+;;;; constant
+
+(define-constant MONGO_CONNECT_TIMEOUT 5000)
+(define-constant MONGO_CHECK_INTERVAL #e5e8)
+
 ;;;; mongo
 
 (define-record-type <mongo> make-mongo mongo?
@@ -103,7 +108,7 @@
     (if (null? addrs)
       (if (>= (current-millisecond) timeout-limit)
         (error <mongo-error> :reason #f "could not connect to server")
-        (begin (sys-nanosleep #e5e8)
+        (begin (sys-nanosleep MONGO_CHECK_INTERVAL)
                (loop seeds)))
       (or (and-let* ([node (mongo-node-connect* (car addrs))]
                      [stat (mongo-node-ismaster node)]
@@ -127,7 +132,7 @@
         (begin (when slave (mongo-node-disconnect! (~ slave 0)))
                (if (>= (current-millisecond) timeout-limit)
                  (error <mongo-error> :reason #f "could not connect to master")
-                 (begin (sys-nanosleep #e5e8)
+                 (begin (sys-nanosleep MONGO_CHECK_INTERVAL)
                         (loop seeds #f #f)))))
       (if-let1 node (mongo-node-connect* (car addrs))
         (let ([time (mongo-node-round-trip node)]
@@ -195,11 +200,29 @@
       (or (mongo-slave m) (mongo-master m))
       (mongo-master m))))
 
-(define (mongo :key (host "localhost") (name #f) (timeout 5000))
+(define-method mongo (:key (host "localhost")
+                           (name #f)
+                           (timeout MONGO_CONNECT_TIMEOUT))
   (mongo-connect name
                  (cond [(string? host) (list (string->mongo-address host))]
                        [(list? host) (map string->mongo-address host)])
                  timeout))
+
+(define-method mongo ((uri <string>))
+  (define (param-ref alist str) (assoc-ref alist str #f string-ci=?))
+  (receive (user pass addrs db params) (mongo-uri-parse uri)
+    (let1 m (mongo-connect (param-ref params "replicaSet")
+                           addrs
+                           (or (param-ref params "connectTimeoutMS")
+                               MONGO_CONNECT_TIMEOUT))
+      (rlet1 x (if db (mongo-database m db) m)
+        (when (and user pass)
+          (guard (e [(<mongo-request-error> e)
+                     (mongo-disconnect! m)
+                     (raise e)])
+            (mongo-auth (mongo-database m (or db "admin"))
+                        user
+                        pass)))))))
 
 (define (mongo-admin m query :key (slave #f))
   (mongo-available! m)

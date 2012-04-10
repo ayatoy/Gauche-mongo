@@ -273,7 +273,7 @@
              '(#f ())))
 
 (define $mongo-uri
-  ($do [($string "mongodb://")]
+  ($do [($optional ($string "mongodb://"))]
        [auth $mongo-uri-auth]
        [addrs $mongo-uri-addresses]
        [path  $mongo-uri-path]
