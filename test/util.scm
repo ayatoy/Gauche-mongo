@@ -150,6 +150,11 @@
            (mongo-uri-parse "mongodb:///foo/bar/baz:0/?key=value")
          (list user pass (map mongo-address->string addrs) db params)))
 
+(test* "mongo-uri-parse 6" '(#f #f ("localhost:27017") "foo" ())
+       (receive (user pass addrs db params)
+           (mongo-uri-parse "localhost/foo")
+         (list user pass (map mongo-address->string addrs) db params)))
+
 ;;;; clock
 
 (test-section "clock")
