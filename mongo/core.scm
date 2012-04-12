@@ -67,6 +67,7 @@
           mongo-drop-indexes
           mongo-reindex
           mongo-distinct
+          mongo-map-reduce
           mongo-dbref?
           mongo-dbref
           mongo-dbref-get))
@@ -601,6 +602,33 @@
                          (mongo-collection-name col)
                          key
                          query)))
+
+(define (mongo-map-reduce col map reduce :key (query #f)
+                                              (sort #f)
+                                              (limit #f)
+                                              (out #f)
+                                              (keeptemp #f)
+                                              (finalize #f)
+                                              (scope #f)
+                                              (js-mode #f)
+                                              (verbose #f))
+  (let* ([db (mongo-collection-database col)]
+         [m  (mongo-database-server db)])
+    (mongo-available! m)
+    (mongo-node-map-reduce (mongo-ref m :slave #f)
+                           (mongo-database-name db)
+                           (mongo-collection-name col)
+                           map
+                           reduce
+                           :query query
+                           :sort sort
+                           :limit limit
+                           :out out
+                           :keeptemp keeptemp
+                           :finalize finalize
+                           :scope scope
+                           :js-mode js-mode
+                           :verbose verbose)))
 
 ;;;; dbref
 

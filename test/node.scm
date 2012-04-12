@@ -445,4 +445,15 @@
          (and (ok? (mongo-node-insert *node* *dn* *cn* (list doc):safe #t :w 1))
               (equal? doc (mongo-node-dbref-get *node* "foo" ref)))))
 
+(test* "mongo-node-map-reduce" #t
+       (let* ([id  (test-insert 100)]
+              [m   (bson-code "function() { emit(this.i, 1); }")]
+              [r   (bson-code "function(k, vals) { return 1; }")]
+              [res (mongo-node-map-reduce *node* *dn* *cn* m r
+                                          :query (% "test-id" id
+                                                    "i" (% "$exists" 'true))
+                                          :out (% "inline" 1))])
+         (and (ok? res)
+              (= 100 (vector-length (alref res "results"))))))
+
 (test-end)

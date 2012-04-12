@@ -61,6 +61,7 @@
           mongo-node-reauth
           mongo-node-distinct
           mongo-node-dbref-get
+          mongo-node-map-reduce
           <mongo-cursor>
           mongo-cursor?
           mongo-cursor-locking
@@ -481,6 +482,32 @@
                     (assoc-ref ref "$ref")
                     `(("_id" . ,(assoc-ref ref "$id")))
                     :slave-ok slave-ok))
+
+;;;; map-reduce
+
+(define (mongo-node-map-reduce node dn cn map reduce :key (query #f)
+                                                          (sort #f)
+                                                          (limit #f)
+                                                          (out #f)
+                                                          (keeptemp #f)
+                                                          (finalize #f)
+                                                          (scope #f)
+                                                          (js-mode #f)
+                                                          (verbose #f))
+  (mongo-node-command node
+                      dn
+                      `(("mapreduce" . ,cn)
+                        ("map" . ,map)
+                        ("reduce" . ,reduce)
+                        ,@(if query `(("query" . ,query)) '())
+                        ,@(if sort `(("sort" . ,sort)) '())
+                        ,@(if limit `(("limit" . ,limit)) '())
+                        ,@(if out `(("out" . ,out)) '())
+                        ,@(if keeptemp `(("keeptemp" . ,keeptemp)) '())
+                        ,@(if finalize `(("finalize" . ,finalize)) '())
+                        ,@(if scope `(("scope" . ,scope)) '())
+                        ,@(if js-mode `(("jsMode" . ,js-mode)) '())
+                        ,@(if verbose `(("verbose" . ,verbose)) '()))))
 
 ;;;; cursor
 

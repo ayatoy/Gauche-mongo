@@ -228,6 +228,12 @@
 (test* "mongo-distinct" #t
        (ok? (mongo-distinct *single-col* "x")))
 
+(test* "mongo-map-reduce" #t
+       (ok? (mongo-map-reduce *single-col*
+                              (bson-code "function() { emit(this.i, 1); }")
+                              (bson-code "function(k, vals) { return 1; }")
+                              :out (% "inline" 1))))
+
 (test* "mongo-dbref? 1" #t
        (mongo-dbref? '(("$ref" . "foo") ("$id" . "bar"))))
 
@@ -430,6 +436,12 @@
 
 (test* "mongo-distinct" #t
        (ok? (mongo-distinct *rs-col* "x")))
+
+(test* "mongo-map-reduce" #t
+       (ok? (mongo-map-reduce *rs-col*
+                              (bson-code "function() { emit(this.i, 1); }")
+                              (bson-code "function(k, vals) { return 1; }")
+                              :out (% "inline" 1))))
 
 (test* "mongo-dbref? 1" #t
        (mongo-dbref? '(("$ref" . "foo") ("$id" . "bar"))))
