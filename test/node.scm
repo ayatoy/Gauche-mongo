@@ -393,7 +393,8 @@
        (ok? (mongo-node-reset-error *node* *dn*)))
 
 (test* "mongo-node-ensure-index" #t
-       (ok? (mongo-node-ensure-index *node* *dn* *cn* *index-name* (% "i" 1))))
+       (ok? (mongo-node-ensure-index *node* *dn* *cn* *index-name* (% "i" 1)
+                                     :safe #t)))
 
 (test* "mongo-node-show-indexes" #t
        (every (^[doc] (string? (alref doc "name")))

@@ -195,10 +195,10 @@
 
 (define (mongo-node-insert node dn cn docs :key (continue-on-error #f)
                                                 (safe #f)
-                                                (fsync #f)
-                                                (j #f)
-                                                (w #f)
-                                                (wtimeout #f))
+                                                fsync
+                                                j
+                                                w
+                                                wtimeout)
   (let1 message (mongo-message-insert
                  (mongo-ns-compose dn cn)
                  docs
@@ -217,10 +217,10 @@
 (define (mongo-node-update node dn cn select update :key (upsert #f)
                                                          (multi-update #f)
                                                          (safe #f)
-                                                         (fsync #f)
-                                                         (j #f)
-                                                         (w #f)
-                                                         (wtimeout #f))
+                                                         fsync
+                                                         j
+                                                         w
+                                                         wtimeout)
   (let1 message (mongo-message-update
                  (mongo-ns-compose dn cn)
                  select
@@ -240,10 +240,10 @@
 
 (define (mongo-node-delete node dn cn select :key (single-remove #f)
                                                   (safe #f)
-                                                  (fsync #f)
-                                                  (j #f)
-                                                  (w #f)
-                                                  (wtimeout #f))
+                                                  fsync
+                                                  j
+                                                  w
+                                                  wtimeout)
   (let1 message (mongo-message-delete
                  (mongo-ns-compose dn cn)
                  select
@@ -264,7 +264,7 @@
 (define (mongo-node-command node dn query)
   (rlet1 doc (mongo-node-find1 node dn "$cmd" query)
     (when (zero? (assoc-ref doc "ok"))
-      (error <mongo-request-error> :reason #f (assoc-ref doc "errmsg")))))
+      (error <mongo-request-error> :reason doc (assoc-ref doc "errmsg")))))
 
 (define (mongo-node-admin node query)
   (mongo-node-command node "admin" query))
@@ -291,15 +291,15 @@
 (define (mongo-node-drop-database node dn)
   (mongo-node-command node dn '(("dropDatabase" . 1))))
 
-(define (mongo-node-create-collection node dn cn :key (capped #f)
-                                                      (size #f)
-                                                      (max #f))
+(define (mongo-node-create-collection node dn cn :key capped
+                                                      size
+                                                      max)
   (mongo-node-command node
                       dn
                       `(("create" . ,cn)
-                        ("capped" . ,(bson-boolean capped))
-                        ("size" . ,(or size 'undefined))
-                        ("max" . ,(or max 'undefined)))))
+                        ,@(bson-document-part "capped" capped)
+                        ,@(bson-document-part "size" size)
+                        ,@(bson-document-part "max" max))))
 
 (define (mongo-node-show-collections node dn)
   (mongo-cursor-all! (mongo-node-find node dn "system.namespaces" '())))
@@ -307,47 +307,47 @@
 (define (mongo-node-drop-collection node dn cn)
   (mongo-node-command node dn `(("drop" . ,cn))))
 
-(define (mongo-node-get-last-error node dn :key (fsync #f)
-                                                (j #f)
-                                                (w #f)
-                                                (wtimeout #f))
+(define (mongo-node-get-last-error node dn :key fsync
+                                                j
+                                                w
+                                                wtimeout)
   (rlet1 doc (mongo-node-command
               node
               dn
               `(("getLastError" . 1)
-                ,@(if fsync '(("fsync" . true)) '())
-                ,@(if j '(("j" . true)) '())
-                ,@(if w `(("w" . ,w)) '())
-                ,@(if wtimeout `(("wtimeout" . ,wtimeout)) '())))
+                ,@(bson-document-part "fsync" fsync)
+                ,@(bson-document-part "j" j)
+                ,@(bson-document-part "w" w)
+                ,@(bson-document-part "wtimeout" wtimeout)))
     (if-let1 err (assoc-ref doc "err")
       (when (not (eq? 'null err))
-        (error <mongo-request-error> :reason #f err)))))
+        (error <mongo-request-error> :reason doc err)))))
 
 (define (mongo-node-reset-error node dn)
   (mongo-node-command node dn '(("reseterror" . 1))))
 
 ;;;; index
 
-(define (mongo-node-ensure-index node dn cn name spec :key (unique #f)
-                                                           (drop-dups #f)
-                                                           (background #f)
-                                                           (sparse #f)
+(define (mongo-node-ensure-index node dn cn name spec :key unique
+                                                           drop-dups
+                                                           background
+                                                           sparse
                                                            (safe #f)
-                                                           (fsync #f)
-                                                           (j #f)
-                                                           (w #f)
-                                                           (wtimeout #f))
+                                                           fsync
+                                                           j
+                                                           w
+                                                           wtimeout)
   (mongo-node-insert node
                      dn
                      "system.indexes"
                      `((("ns" . ,(mongo-ns-compose dn cn))
                         ("key" . ,spec)
                         ("name" . ,name)
-                        ("unique" . ,(bson-boolean unique))
-                        ("dropDups" . ,(bson-boolean drop-dups))
-                        ("background" . ,(bson-boolean background))
-                        ("sparse" . ,(bson-boolean sparse))))
-                     :safe #t
+                        ,@(bson-document-part "unique" unique)
+                        ,@(bson-document-part "dropDups" drop-dups)
+                        ,@(bson-document-part "background" background)
+                        ,@(bson-document-part "sparse" sparse)))
+                     :safe safe
                      :fsync fsync
                      :j j
                      :w w
@@ -377,12 +377,11 @@
 (define (mongo-node-get-profiling-level node dn)
   (assoc-ref (mongo-node-profiling-status node dn) "was"))
 
-(define (mongo-node-set-profiling-level node dn level :key (slowms #f))
+(define (mongo-node-set-profiling-level node dn level :key slowms)
   (mongo-node-command node
                       dn
-                      (if slowms
-                        `(("profile" . ,level) ("slowms" . ,slowms))
-                        `(("profile" . ,level)))))
+                      `(("profile" . ,level)
+                        ,@(bson-document-part "slowms" slowms))))
 
 (define (mongo-node-show-profiling node dn)
   (mongo-cursor-all! (mongo-node-find node dn "system.profile" '())))
@@ -401,18 +400,18 @@
 (define (mongo-node-auth-delete! node dn user)
   (hash-table-delete! (mongo-node-authed node) (vector dn user)))
 
-(define (mongo-node-add-user node dn user pass :key (read-only #f)
+(define (mongo-node-add-user node dn user pass :key read-only
                                                     (safe #f)
-                                                    (fsync #f)
-                                                    (j #f)
-                                                    (w #f)
-                                                    (wtimeout #f))
+                                                    fsync
+                                                    j
+                                                    w
+                                                    wtimeout)
   (mongo-node-update node
                      dn
                      "system.users"
                      `(("user" . ,user))
-                     `(("$set" . (("readOnly" . ,(bson-boolean read-only))
-                                  ("pwd" . ,(mongo-digest-hexify user pass)))))
+                     `(("$set" . (("pwd" . ,(mongo-digest-hexify user pass))
+                                  ,@(bson-document-part "readOnly" read-only))))
                      :upsert #t
                      :safe safe
                      :fsync fsync
@@ -421,10 +420,10 @@
                      :wtimeout wtimeout))
 
 (define (mongo-node-remove-user node dn user :key (safe #f)
-                                                  (fsync #f)
-                                                  (j #f)
-                                                  (w #f)
-                                                  (wtimeout #f))
+                                                  fsync
+                                                  j
+                                                  w
+                                                  wtimeout)
   (begin0 (mongo-node-delete node
                              dn
                              "system.users"
@@ -467,12 +466,12 @@
 
 ;;;; aggregation
 
-(define (mongo-node-distinct node dn cn key :optional (query #f))
+(define (mongo-node-distinct node dn cn key :key query)
   (mongo-node-command node
                       dn
                       `(("distinct" . ,cn)
                         ("key" . ,key)
-                        ,@(if query `(("query" . ,query)) '()))))
+                        ,@(bson-document-part "query" query))))
 
 ;;;; dbref
 
@@ -485,29 +484,29 @@
 
 ;;;; map-reduce
 
-(define (mongo-node-map-reduce node dn cn map reduce :key (query #f)
-                                                          (sort #f)
-                                                          (limit #f)
-                                                          (out #f)
-                                                          (keeptemp #f)
-                                                          (finalize #f)
-                                                          (scope #f)
-                                                          (js-mode #f)
-                                                          (verbose #f))
+(define (mongo-node-map-reduce node dn cn map reduce :key query
+                                                          sort
+                                                          limit
+                                                          out
+                                                          keeptemp
+                                                          finalize
+                                                          scope
+                                                          js-mode
+                                                          verbose)
   (mongo-node-command node
                       dn
                       `(("mapreduce" . ,cn)
                         ("map" . ,map)
                         ("reduce" . ,reduce)
-                        ,@(if query `(("query" . ,query)) '())
-                        ,@(if sort `(("sort" . ,sort)) '())
-                        ,@(if limit `(("limit" . ,limit)) '())
-                        ,@(if out `(("out" . ,out)) '())
-                        ,@(if keeptemp `(("keeptemp" . ,keeptemp)) '())
-                        ,@(if finalize `(("finalize" . ,finalize)) '())
-                        ,@(if scope `(("scope" . ,scope)) '())
-                        ,@(if js-mode `(("jsMode" . ,js-mode)) '())
-                        ,@(if verbose `(("verbose" . ,verbose)) '()))))
+                        ,@(bson-document-part "query" query)
+                        ,@(bson-document-part "sort" sort)
+                        ,@(bson-document-part "limit" limit)
+                        ,@(bson-document-part "out" out)
+                        ,@(bson-document-part "keeptemp" keeptemp)
+                        ,@(bson-document-part "finalize" finalize)
+                        ,@(bson-document-part "scope" scope)
+                        ,@(bson-document-part "jsMode" js-mode)
+                        ,@(bson-document-part "verbose" verbose))))
 
 ;;;; cursor
 

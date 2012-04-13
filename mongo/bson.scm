@@ -87,6 +87,7 @@
           bson-false
           bson-true
           bson-boolean
+          boolean->bson-boolean
           write-bson-boolean-prepare
           write-bson-boolean
           read-bson-boolean
@@ -178,6 +179,7 @@
           write-bson-document-prepare
           write-bson-document
           read-bson-document
+          bson-document-part
           write-bson-array-prepare
           write-bson-array
           read-bson-array))
@@ -414,6 +416,11 @@
 (define (bson-false) 'false)
 (define (bson-true) 'true)
 (define (bson-boolean obj) (if obj 'true 'false))
+
+(define (boolean->bson-boolean obj)
+  (cond [(eq? obj #f) 'false]
+        [(eq? obj #t) 'true]
+        [else obj]))
 
 (define (write-bson-boolean-prepare bson-bool)
   (values BSON_BOOLEAN_SIZE
@@ -948,6 +955,9 @@
     (if-let1 element (read-bson-element iport)
       (loop (cons element elements))
       (reverse elements))))
+
+(define (bson-document-part key obj)
+  (if (undefined? obj) '() `((,key . ,(boolean->bson-boolean obj)))))
 
 ;;;; array
 
