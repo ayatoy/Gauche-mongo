@@ -956,8 +956,12 @@
       (loop (cons element elements))
       (reverse elements))))
 
-(define (bson-document-part key obj)
-  (if (undefined? obj) '() `((,key . ,(boolean->bson-boolean obj)))))
+(define (bson-document-part key obj :optional default)
+  (if (undefined? obj)
+    (if (undefined? default)
+      '()
+      `((,key . ,(boolean->bson-boolean default))))
+    `((,key . ,(boolean->bson-boolean obj)))))
 
 ;;;; array
 
