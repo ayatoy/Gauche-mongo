@@ -4,6 +4,7 @@
   (use gauche.uvector)
   (use gauche.vport)
   (use parser.peg)
+  (use rfc.md5)
   (use srfi-19)
   (use util.list)
   (use util.match)
@@ -48,7 +49,9 @@
           mongo-clock
           mongo-clock-start!
           mongo-clock-stop!
-          current-millisecond))
+          current-millisecond
+          mongo-user-digest-hexify
+          mongo-auth-digest-hexify))
 (select-module mongo.util)
 
 ;;;; condition
@@ -328,3 +331,15 @@
   (let1 t (current-time)
     (+ (* (time-second t) 1000)
        (quotient (time-nanosecond t) 1000000))))
+
+;;;; digest
+
+(define (mongo-user-digest-hexify user pass)
+  (digest-hexify
+   (md5-digest-string
+    (format "~a:mongo:~a" user pass))))
+
+(define (mongo-auth-digest-hexify user pass nonce)
+  (digest-hexify
+   (md5-digest-string
+    (format "~a~a~a" nonce user (mongo-user-digest-hexify user pass)))))

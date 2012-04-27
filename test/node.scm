@@ -427,9 +427,8 @@
 (test* "mongo-node-auth" #t
        (ok? (mongo-node-auth *node* *dn* *user* *pass*)))
 
-(test* "mongo-node-reauth" #t
-       (every (^[pair] (ok? (cdr pair)))
-              (mongo-node-reauth *node*)))
+(test* "mongo-node-reauth" (undefined)
+       (mongo-node-reauth *node*))
 
 (test* "mongo-node-remove-user" #t
        (ok? (mongo-node-remove-user *node* *dn* *user* :safe #t)))

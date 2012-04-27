@@ -4,7 +4,6 @@
   (use gauche.record)
   (use gauche.threads)
   (use gauche.time)
-  (use rfc.md5)
   (use util.list)
   (use mongo.util)
   (use mongo.bson)
@@ -19,10 +18,13 @@
           mongo-node-authed
           mongo-node-locking
           mongo-node-connect
+          mongo-node-connect*
           mongo-node-connect?
           mongo-node-disconnect!
           mongo-node-available!
           mongo-node-request
+          mongo-node-authed-put!
+          mongo-node-authed-delete!
           mongo-node-find1
           mongo-node-find
           mongo-node-insert
@@ -53,11 +55,8 @@
           mongo-node-reindex
           mongo-node-add-user
           mongo-node-remove-user
-          mongo-node-auth-by-digest
           mongo-node-auth
-          mongo-node-auth-put-by-digest!
-          mongo-node-auth-put!
-          mongo-node-auth-delete!
+          mongo-node-auth-by-table
           mongo-node-reauth
           mongo-node-distinct
           mongo-node-dbref-get
@@ -107,6 +106,10 @@
                    (make-counter (expt 2 32))
                    (make-mutex)))
 
+(define (mongo-node-connect* address)
+  (guard (e [(<mongo-connect-error> e) #f])
+    (mongo-node-connect address)))
+
 (define (mongo-node str)
   (mongo-node-connect (string->mongo-address str)))
 
@@ -120,8 +123,8 @@
 
 (define (mongo-node-sync! node)
   (mongo-node-locking node
+    (mongo-node-disconnect! node)
     (let1 socket (mongo-socket-connect (mongo-node-address node))
-      (mongo-node-disconnect! node)
       (mongo-node-socket-set! node socket)
       ((mongo-node-counter node) -1)
       (mongo-node-reauth node))))
@@ -136,15 +139,20 @@
     (guard (e [(<mongo-wire-error> e)
                (mongo-node-disconnect! node)
                (raise e)])
-      (mongo-message-request (mongo-node-socket node)
-                             message))))
+      (mongo-message-request (mongo-node-socket node) message))))
 
 (define (mongo-query-failure reply)
   (if (mongo-message-reply-query-failure? reply)
-    (error <mongo-request-error> :reason #f
+    (error <mongo-request-error> :reason reply
            (and-let* ([doc (mongo-message-reply-document reply)])
              (assoc-ref doc "$err")))
     reply))
+
+(define (mongo-node-authed-put! node dn user pass)
+  (hash-table-put! (mongo-node-authed node) (vector dn user) pass))
+
+(define (mongo-node-authed-delete! node dn user)
+  (hash-table-delete! (mongo-node-authed node) (vector dn user)))
 
 ;;;; CRUD
 
@@ -388,18 +396,6 @@
 
 ;;;; auth
 
-(define (mongo-digest-hexify user pass)
-  (digest-hexify (md5-digest-string (format "~a:mongo:~a" user pass))))
-
-(define (mongo-node-auth-put-by-digest! node dn user digest)
-  (hash-table-put! (mongo-node-authed node) (vector dn user) digest))
-
-(define (mongo-node-auth-put! node dn user pass)
-  (mongo-node-auth-put-by-digest! node dn user (mongo-digest-hexify user pass)))
-
-(define (mongo-node-auth-delete! node dn user)
-  (hash-table-delete! (mongo-node-authed node) (vector dn user)))
-
 (define (mongo-node-add-user node dn user pass :key read-only
                                                     (safe #f)
                                                     fsync
@@ -410,7 +406,8 @@
                      dn
                      "system.users"
                      `(("user" . ,user))
-                     `(("$set" . (("pwd" . ,(mongo-digest-hexify user pass))
+                     `(("$set" . (("pwd" . ,(mongo-user-digest-hexify user
+                                                                      pass))
                                   ,@(bson-document-part "readOnly" read-only))))
                      :upsert #t
                      :safe safe
@@ -424,45 +421,49 @@
                                                   j
                                                   w
                                                   wtimeout)
-  (begin0 (mongo-node-delete node
-                             dn
-                             "system.users"
-                             `(("user" . ,user))
-                             :safe safe
-                             :fsync fsync
-                             :j j
-                             :w w
-                             :wtimeout wtimeout)
-          (hash-table-delete! (mongo-node-authed node)
-                              (vector dn user))))
-
-(define (mongo-node-auth-by-digest node dn user digest)
-  (let1 nonce (assoc-ref (mongo-node-command node dn '(("getnonce" . 1)))
-                         "nonce")
-    (begin0 (mongo-node-command node
-                                dn
-                                `(("authenticate" . 1)
-                                  ("user" . ,user)
-                                  ("nonce" . ,nonce)
-                                  ("key" . ,(digest-hexify
-                                             (md5-digest-string
-                                              (string-append nonce
-                                                             user
-                                                             digest))))))
-            (mongo-node-auth-put-by-digest! node dn user digest))))
+  (mongo-node-delete node
+                     dn
+                     "system.users"
+                     `(("user" . ,user))
+                     :safe safe
+                     :fsync fsync
+                     :j j
+                     :w w
+                     :wtimeout wtimeout))
 
 (define (mongo-node-auth node dn user pass)
-  (mongo-node-auth-by-digest node dn user (mongo-digest-hexify user pass)))
+  (let1 nonce (alref (mongo-node-command node dn '(("getnonce" . 1))) "nonce")
+    (begin0 (mongo-node-command
+             node
+             dn
+             `(("authenticate" . 1)
+               ("user"  . ,user)
+               ("nonce" . ,nonce)
+               ("key"   . ,(mongo-auth-digest-hexify user pass nonce))))
+            (mongo-node-authed-put! node dn user pass))))
+
+(define (mongo-node-auth-by-table node table :key (error #f)
+                                                  (delete #t)
+                                                  (ignore #f))
+  (let1 authed (mongo-node-authed node)
+    (hash-table-for-each
+     table
+     (^[vec pass]
+       (guard (e [(<mongo-request-error> e)
+                  (when delete (hash-table-delete! authed vec))
+                  (when error (raise e))])
+         (unless (and (hash-table-exists? authed vec) ignore)
+           (mongo-node-auth node
+                            (vector-ref vec 0)
+                            (vector-ref vec 1)
+                            pass)))))))
 
 (define (mongo-node-reauth node)
-  (hash-table-map (mongo-node-authed node)
-                  (^[vec digest]
-                    (let1 user (vector-ref vec 1)
-                      (cons user
-                            (mongo-node-auth-by-digest node
-                                                       (vector-ref vec 0)
-                                                       user
-                                                       digest))))))
+  (mongo-node-auth-by-table node
+                            (mongo-node-authed node)
+                            :error #f
+                            :delete #t
+                            :ignore #f))
 
 ;;;; aggregation
 

@@ -98,12 +98,11 @@
      (with-locking-mutex-recursively (mongo-mutex m)
        (^[] body ...))]))
 
+(define (mongo-single? m)
+  (not (mongo-name m)))
+
 (define (mongo-replica-set? m)
   (not (not (mongo-name m))))
-
-(define (mongo-node-connect* address)
-  (guard (e [(<mongo-connect-error> e) #f])
-    (mongo-node-connect address)))
 
 (define (mongo-fetch-hosts name seeds timeout-limit)
   (let loop ([addrs seeds])
@@ -122,16 +121,16 @@
 
 (define (mongo-fetch-nodes name seeds timeout-limit)
   (define (nearer! c1 c2)
-    (if (and (list? c1) (list? c2))
-      (if (> (~ c2 1) (~ c1 1))
-        (begin (mongo-node-disconnect! (~ c2 0)) c1)
-        (begin (mongo-node-disconnect! (~ c1 0)) c2))
+    (if (and (vector? c1) (vector? c2))
+      (if (> (vector-ref c2 1) (vector-ref c1 1))
+        (begin (mongo-node-disconnect! (vector-ref c2 0)) c1)
+        (begin (mongo-node-disconnect! (vector-ref c1 0)) c2))
       (or c1 c2)))
   (let loop ([addrs seeds] [master #f] [slave #f])
     (if (null? addrs)
       (if master
-        (values (~ master 0) (and slave (~ slave 0)))
-        (begin (when slave (mongo-node-disconnect! (~ slave 0)))
+        (values (vector-ref master 0) (and slave (vector-ref slave 0)))
+        (begin (when slave (mongo-node-disconnect! (vector-ref slave 0)))
                (if (>= (current-millisecond) timeout-limit)
                  (error <mongo-error> :reason #f "could not connect to master")
                  (begin (sys-nanosleep MONGO_CHECK_INTERVAL)
@@ -141,8 +140,8 @@
               [stat (mongo-node-ismaster node)])
           (if (equal? (assoc-ref stat "setName") name)
             (if (bson-true? (assoc-ref stat "ismaster"))
-              (loop (cdr addrs) (nearer! master (list node time)) slave)
-              (loop (cdr addrs) master (nearer! slave (list node time))))
+              (loop (cdr addrs) (nearer! master (vector node time)) slave)
+              (loop (cdr addrs) master (nearer! slave (vector node time))))
             (begin (mongo-node-disconnect! node)
                    (loop (cdr addrs) master slave))))
         (loop (cdr addrs) master slave)))))
@@ -158,7 +157,7 @@
     (and (mongo-node-connect? (mongo-master m))
          (if-let1 slave (mongo-slave m)
            (mongo-node-connect? slave)
-           (not (mongo-replica-set? m))))))
+           (mongo-single? m)))))
 
 (define (mongo-disconnect! m)
   (mongo-locking m
@@ -166,30 +165,20 @@
       (mongo-node-disconnect! slave))
     (mongo-node-disconnect! (mongo-master m))))
 
-(define (mongo-reauth m)
-  (mongo-locking m
-    (let ([master (mongo-master m)]
-          [slave  (mongo-slave m)])
-      (hash-table-for-each
-       (mongo-node-authed master)
-       (^[vec digest]
-         (let ([dn   (vector-ref vec 0)]
-               [user (vector-ref vec 1)])
-           (mongo-node-auth-by-digest master dn user digest)
-           (when slave (mongo-node-auth-by-digest slave dn user digest))))))))
-
 (define (mongo-sync! m)
   (mongo-locking m
-    (let* ([name  (mongo-name m)]
-           [seeds (mongo-hosts m)]
-           [limit (+ (current-millisecond) (mongo-timeout m))]
-           [hosts (if name (mongo-fetch-hosts name seeds limit) seeds)])
+    (mongo-disconnect! m)
+    (let* ([name   (mongo-name m)]
+           [seeds  (mongo-hosts m)]
+           [limit  (+ (current-millisecond) (mongo-timeout m))]
+           [authed (mongo-node-authed (mongo-master m))]
+           [hosts  (if name (mongo-fetch-hosts name seeds limit) seeds)])
       (receive (master slave) (mongo-fetch-nodes name hosts limit)
-        (mongo-disconnect! m)
         (mongo-master-set! m master)
         (mongo-slave-set! m slave)
         (mongo-hosts-set! m hosts)
-        (mongo-reauth m)))))
+        (mongo-node-auth-by-table master authed)
+        (when slave (mongo-node-auth-by-table slave authed))))))
 
 (define (mongo-available! m)
   (mongo-locking m
@@ -202,15 +191,7 @@
       (or (mongo-slave m) (mongo-master m))
       (mongo-master m))))
 
-(define-method mongo (:key (host "localhost")
-                           (name #f)
-                           (timeout MONGO_CONNECT_TIMEOUT))
-  (mongo-connect name
-                 (cond [(string? host) (list (string->mongo-address host))]
-                       [(list? host) (map string->mongo-address host)])
-                 timeout))
-
-(define-method mongo ((uri <string>))
+(define (mongo uri)
   (define (param-ref alist str) (assoc-ref alist str #f string-ci=?))
   (receive (user pass addrs db params) (mongo-uri-parse uri)
     (let1 m (mongo-connect (param-ref params "replicaSet")
@@ -407,7 +388,7 @@
                                 (mongo-database-name db)
                                 (mongo-collection-name col))))
 
-(define (mongo-find1 col query :key (slave #t)
+(define (mongo-find1 col query :key (slave #f)
                                     (select #f)
                                     (skip 0))
   (let* ([db (mongo-collection-database col)]
@@ -421,7 +402,7 @@
                       :return-field-selector select
                       :slave-ok slave)))
 
-(define (mongo-find col query :key (slave #t)
+(define (mongo-find col query :key (slave #f)
                                    (select #f)
                                    (skip 0)
                                    (limit #f)
@@ -452,7 +433,7 @@
                      :partial partial)))
 
 (define (mongo-insert1 col doc :key (continue #t)
-                                    (safe #t)
+                                    (safe #f)
                                     fsync
                                     j
                                     w
@@ -472,7 +453,7 @@
                        :wtimeout wtimeout)))
 
 (define (mongo-insert col docs :key (continue #t)
-                                    (safe #t)
+                                    (safe #f)
                                     fsync
                                     j
                                     w
@@ -493,7 +474,7 @@
 
 (define (mongo-update col query update :key (upsert #f)
                                             (single #f)
-                                            (safe #t)
+                                            (safe #f)
                                             fsync
                                             j
                                             w
@@ -515,7 +496,7 @@
                        :wtimeout wtimeout)))
 
 (define (mongo-delete col query :key (single #f)
-                                     (safe #t)
+                                     (safe #f)
                                      fsync
                                      j
                                      w

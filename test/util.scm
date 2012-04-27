@@ -169,4 +169,14 @@
                 (sys-sleep 1)
                 (> i 0))))
 
+;;;; digest
+
+(test-section "digest")
+
+(test* "mongo-user-digest-hexify" "3563025c1e89c7ad43fb63fcbcf1c3c6"
+       (mongo-user-digest-hexify "foo" "bar"))
+
+(test* "mongo-auth-digest-hexify" "68031908da80a027a2ab1e1d15056cd8"
+       (mongo-auth-digest-hexify "foo" "bar" "baz"))
+
 (test-end)

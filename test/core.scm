@@ -45,7 +45,7 @@
 (test-section "single")
 
 (test* "mongo" #t
-       (begin (set! *single* (mongo :host *hosts* :name #f)) #t))
+       (begin (set! *single* (mongo "localhost:27017")) #t))
 
 (test* "mongo?" #t
        (mongo? *single*))
@@ -208,7 +208,8 @@
 
 (test* "mongo-delete" #t
        (ok? (mongo-delete *single-col*
-                          (% "x" (% "$exists" 'true)))))
+                          (% "x" (% "$exists" 'true))
+                          :safe #t)))
 
 (test* "mongo-ensure-index" #t
        (ok? (mongo-ensure-index *single-col* *in* (% "x" 1) :safe #t)))
@@ -254,7 +255,7 @@
 (test-section "replica-set")
 
 (test* "mongo" #t
-       (begin (set! *rs* (mongo :host *hosts* :name *rn*)) #t))
+       (begin (set! *rs* (mongo "localhost:27018,localhost:27019,localhost:27010/?replicaset=gauche_mongo_test_replica_set")) #t))
 
 (test* "mongo?" #t
        (mongo? *rs*))
@@ -417,7 +418,8 @@
 
 (test* "mongo-delete" #t
        (ok? (mongo-delete *rs-col*
-                          (% "x" (% "$exists" 'true)))))
+                          (% "x" (% "$exists" 'true))
+                          :safe #t)))
 
 (test* "mongo-ensure-index" #t
        (ok? (mongo-ensure-index *rs-col* *in* (% "x" 1) :safe #t)))
