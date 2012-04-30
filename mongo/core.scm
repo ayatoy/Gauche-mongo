@@ -241,7 +241,7 @@
   (format oport "#<mongo-database ~s>" (mongo-database-name db)))
 
 (define (mongo-database m dn)
-  (make-mongo-database m dn))
+  (make-mongo-database m (mongo-validate-database-name dn)))
 
 (define (mongo-command db query :key (slave #f))
   (let1 m (mongo-database-server db)
@@ -361,7 +361,7 @@
   (format oport "#<mongo-collection ~s>" (mongo-fullname col)))
 
 (define (mongo-collection db cn)
-  (make-mongo-collection db cn))
+  (make-mongo-collection db (mongo-validate-collection-name cn)))
 
 (define (mongo-fullname col)
   (mongo-ns-compose (mongo-database-name (mongo-collection-database col))

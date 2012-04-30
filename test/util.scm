@@ -179,4 +179,65 @@
 (test* "mongo-auth-digest-hexify" "68031908da80a027a2ab1e1d15056cd8"
        (mongo-auth-digest-hexify "foo" "bar" "baz"))
 
+;;;; validation
+
+(test* "mongo-validate-database-name 1" "foo"
+       (mongo-validate-database-name "foo"))
+
+(test* "mongo-validate-database-name 2" (test-error <mongo-validation-error>)
+       (mongo-validate-database-name "foo bar"))
+
+(test* "mongo-validate-database-name 3" (test-error <mongo-validation-error>)
+       (mongo-validate-database-name "foo.bar"))
+
+(test* "mongo-validate-database-name 4" (test-error <mongo-validation-error>)
+       (mongo-validate-database-name "$foo"))
+
+(test* "mongo-validate-database-name 5" (test-error <mongo-validation-error>)
+       (mongo-validate-database-name "foo/bar"))
+
+(test* "mongo-validate-database-name 6" (test-error <mongo-validation-error>)
+       (mongo-validate-database-name "foo\\bar"))
+
+(test* "mongo-validate-database-name 7" (test-error <mongo-validation-error>)
+       (mongo-validate-database-name ""))
+
+(test* "mongo-validate-collection-name 1" "foo"
+       (mongo-validate-collection-name "foo"))
+
+(test* "mongo-validate-collection-name 2" (test-error <mongo-validation-error>)
+       (mongo-validate-collection-name ""))
+
+(test* "mongo-validate-collection-name 3" (test-error <mongo-validation-error>)
+       (mongo-validate-collection-name ".."))
+
+(test* "mongo-validate-collection-name 4" (test-error <mongo-validation-error>)
+       (mongo-validate-collection-name "$foo"))
+
+(test* "mongo-validate-collection-name 5" "$cmd"
+       (mongo-validate-collection-name "$cmd"))
+
+(test* "mongo-validate-collection-name 6" "oplog.$main"
+       (mongo-validate-collection-name "oplog.$main"))
+
+(test* "mongo-validate-collection-name 7" (test-error <mongo-validation-error>)
+       (mongo-validate-collection-name ".foo"))
+
+(test* "mongo-validate-collection-name 8" (test-error <mongo-validation-error>)
+       (mongo-validate-collection-name "foo."))
+
+;;;; misc
+
+(test* "mongo-ok? 1" #t
+       (mongo-ok? '(("ok" . 1))))
+
+(test* "mongo-ok? 2" #t
+       (mongo-ok? '(("ok" . 1.0))))
+
+(test* "mongo-ok? 3" #t
+       (mongo-ok? '(("ok" . true))))
+
+(test* "mongo-ok? 4" #f
+       (mongo-ok? '(("ok" . false))))
+
 (test-end)

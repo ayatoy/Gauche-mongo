@@ -13,6 +13,8 @@
           mongo-error-reason
           <mongo-parse-error>
           mongo-parse-error?
+          <mongo-validation-error>
+          mongo-validation-error?
           alist
           %
           alref
@@ -51,7 +53,10 @@
           mongo-clock-stop!
           current-millisecond
           mongo-user-digest-hexify
-          mongo-auth-digest-hexify))
+          mongo-auth-digest-hexify
+          mongo-validate-database-name
+          mongo-validate-collection-name
+          mongo-ok?))
 (select-module mongo.util)
 
 ;;;; condition
@@ -62,6 +67,9 @@
 
 (define-condition-type <mongo-parse-error> <mongo-error>
   mongo-parse-error?)
+
+(define-condition-type <mongo-validation-error> <mongo-error>
+  mongo-validation-error?)
 
 ;;;; alist
 
@@ -343,3 +351,34 @@
   (digest-hexify
    (md5-digest-string
     (format "~a~a~a" nonce user (mongo-user-digest-hexify user pass)))))
+
+;;;; validation
+
+(define (mongo-validate-database-name name)
+  (cond [(find (^[c] (string-scan name c)) '(#\space #\. #\$ #\/ #\\))
+         => (^[c] (error <mongo-validation-error> :reason name
+                         "database name cannot contain character:" c))]
+        [(string=? name "")
+         (error <mongo-validation-error> :reason name
+                "database name cannot be empty")]
+        [else name]))
+
+(define (mongo-validate-collection-name name)
+  (cond [(or (string=? name "") (string=? name ".."))
+         (error <mongo-validation-error> :reason name
+                "collection name cannot be empty")]
+        [(and (string-scan name #\$)
+              (not (#/^$cmd/ name))
+              (not (string=? name "oplog.$main")))
+         (error <mongo-validation-error> :reason name
+                "collection name cannot contain character:" #\$)]
+        [(or (#/^\./ name) (#/\.$/ name))
+         (error <mongo-validation-error> :reason name
+                "collection name cannot start or end with:" #\.)]
+        [else name]))
+
+;;;; misc
+
+(define (mongo-ok? doc)
+  (let1 x (assoc-ref doc "ok")
+    (or (equal? x 1) (equal? x 1.0) (equal? x 'true))))

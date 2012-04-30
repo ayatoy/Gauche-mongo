@@ -124,6 +124,9 @@
 (test* "mongo-database" #t
        (begin (set! *single-db* (mongo-database *single* *dn*)) #t))
 
+(test* "mongo-database validation" (test-error <mongo-validation-error>)
+       (mongo-database *single* "$foo"))
+
 (test* "mongo-database?" #t
        (mongo-database? *single-db*))
 
@@ -171,6 +174,9 @@
 
 (test* "mongo-collection" #t
        (begin (set! *single-col* (mongo-collection *single-db* *cn*)) #t))
+
+(test* "mongo-collection validation" (test-error <mongo-validation-error>)
+       (mongo-collection *single-db* "$foo"))
 
 (test* "mongo-collection-database" #t
        (mongo-database? (mongo-collection-database *single-col*)))
