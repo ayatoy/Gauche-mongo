@@ -270,14 +270,16 @@
          vals))
 
 (define (read-nbyte-to-u8vector n iport)
-  (let* ([u8v (make-u8vector n)]
-         [res (read-block! u8v iport)])
-    (cond
-     [(eof-object? res)
-      (error <bson-read-error> :reason #f "unexpected EOF")]
-     [(not (= n res))
-      (errorf <bson-read-error> :reason #f "expected ~s byte: ~s" n res)]
-     [else u8v])))
+  (if (= n 0)
+    #u8()
+    (let* ([u8v (make-u8vector n)]
+           [res (read-block! u8v iport)])
+      (cond
+       [(eof-object? res)
+        (error <bson-read-error> :reason #f "unexpected EOF")]
+       [(not (= n res))
+        (errorf <bson-read-error> :reason #f "expected ~s byte: ~s" n res)]
+       [else u8v]))))
 
 ;;;; int32
 
