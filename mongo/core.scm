@@ -408,7 +408,8 @@
                                    (select #f)
                                    (skip 0)
                                    (limit #f)
-                                   (sort #f)
+                                   (sort (undefined))
+                                   (snapshot (undefined))
                                    (number-to-return 0)
                                    (tailable-cursor #f)
                                    (oplog-replay #f)
@@ -422,7 +423,11 @@
     (mongo-node-find (mongo-ref m :slave slave)
                      (mongo-database-name db)
                      (mongo-collection-name col)
-                     (if sort `(("query" . ,query) ("orderby" . ,sort)) query)
+                     (if (and (undefined? sort) (undefined? snapshot))
+                       query
+                       `(("query" . ,query)
+                         ,@(bson-document-part "orderby" sort)
+                         ,@(bson-document-part "$snapshot" snapshot)))
                      :number-to-skip skip
                      :number-to-return (or (and limit (* -1 (abs limit)))
                                            number-to-return)
