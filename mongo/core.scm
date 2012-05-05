@@ -406,6 +406,7 @@
                                    (select #f)
                                    (skip 0)
                                    (limit #f)
+                                   (sort #f)
                                    (number-to-return 0)
                                    (tailable-cursor #f)
                                    (oplog-replay #f)
@@ -419,7 +420,7 @@
     (mongo-node-find (mongo-ref m :slave slave)
                      (mongo-database-name db)
                      (mongo-collection-name col)
-                     query
+                     (if sort `(("query" . ,query) ("orderby" . ,sort)) query)
                      :number-to-skip skip
                      :number-to-return (or (and limit (* -1 (abs limit)))
                                            number-to-return)
