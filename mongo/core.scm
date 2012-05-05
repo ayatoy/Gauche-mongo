@@ -69,6 +69,7 @@
           mongo-reindex
           mongo-count
           mongo-distinct
+          mongo-group
           mongo-map-reduce
           mongo-dbref?
           mongo-dbref
@@ -601,6 +602,23 @@
                                     key
                                     :query query)
                "values")))
+
+(define (mongo-group col key reduce initial :key keyf
+                                                 cond
+                                                 finalize)
+  (let* ([db (mongo-collection-database col)]
+         [m  (mongo-database-server db)])
+    (mongo-available! m)
+    (assoc-ref (mongo-node-group (mongo-ref m :slave #f)
+                                 (mongo-database-name db)
+                                 (mongo-collection-name col)
+                                 key
+                                 reduce
+                                 initial
+                                 :keyf keyf
+                                 :cond cond
+                                 :finalize finalize)
+               "retval")))
 
 (define (mongo-map-reduce col map reduce :key query
                                               sort

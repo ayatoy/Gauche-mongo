@@ -238,6 +238,12 @@
 (test* "mongo-distinct" #t
        (vector? (mongo-distinct *single-col* "x")))
 
+(test* "mongo-group" #t
+       (vector? (mongo-group *single-col*
+                             '()
+                             (bson-code "function(doc,acc){acc.cnt++;}")
+                             '(("cnt" . 0)))))
+
 (test* "mongo-map-reduce" #t
        (ok? (mongo-map-reduce *single-col*
                               (bson-code "function() { emit(this.i, 1); }")
@@ -450,6 +456,12 @@
 
 (test* "mongo-distinct" #t
        (vector? (mongo-distinct *rs-col* "x")))
+
+(test* "mongo-group" #t
+       (vector? (mongo-group *rs-col*
+                             '()
+                             (bson-code "function(doc,acc){acc.cnt++;}")
+                             '(("cnt" . 0)))))
 
 (test* "mongo-map-reduce" #t
        (ok? (mongo-map-reduce *rs-col*

@@ -58,9 +58,10 @@
           mongo-node-auth
           mongo-node-auth-by-table
           mongo-node-reauth
+          mongo-node-dbref-get
           mongo-node-count
           mongo-node-distinct
-          mongo-node-dbref-get
+          mongo-node-group
           mongo-node-map-reduce
           <mongo-cursor>
           mongo-cursor?
@@ -465,6 +466,15 @@
                             :delete #t
                             :ignore #f))
 
+;;;; dbref
+
+(define (mongo-node-dbref-get node dn ref :key (slave-ok #f))
+  (mongo-node-find1 node
+                    (or (assoc-ref ref "$db") dn)
+                    (assoc-ref ref "$ref")
+                    `(("_id" . ,(assoc-ref ref "$id")))
+                    :slave-ok slave-ok))
+
 ;;;; aggregation
 
 (define (mongo-node-count node dn cn :key query fields limit skip)
@@ -483,16 +493,19 @@
                         ("key" . ,key)
                         ,@(bson-document-part "query" query))))
 
-;;;; dbref
-
-(define (mongo-node-dbref-get node dn ref :key (slave-ok #f))
-  (mongo-node-find1 node
-                    (or (assoc-ref ref "$db") dn)
-                    (assoc-ref ref "$ref")
-                    `(("_id" . ,(assoc-ref ref "$id")))
-                    :slave-ok slave-ok))
-
-;;;; map-reduce
+(define (mongo-node-group node dn cn key reduce initial :key keyf
+                                                             cond
+                                                             finalize)
+  (mongo-node-command
+   node
+   dn
+   `(("group" . (("ns"      . ,cn)
+                 ("key"     . ,key)
+                 ("$reduce"  . ,reduce)
+                 ("initial" . ,initial)
+                 ,@(bson-document-part "keyf" keyf)
+                 ,@(bson-document-part "cond" cond)
+                 ,@(bson-document-part "finalize" finalize))))))
 
 (define (mongo-node-map-reduce node dn cn map reduce :key query
                                                           sort

@@ -429,6 +429,13 @@
 (test* "mongo-node-remove-user" #t
        (ok? (mongo-node-remove-user *node* *dn* *user* :safe #t)))
 
+(test* "mongo-node-dbref-get" #t
+       (let* ([oid (bson-object-id)]
+              [ref (% "$ref" *cn* "$id" oid "$db" *dn*)]
+              [doc (% "_id" oid "foo" "bar")])
+         (and (ok? (mongo-node-insert *node* *dn* *cn* (list doc):safe #t :w 1))
+              (equal? doc (mongo-node-dbref-get *node* "foo" ref)))))
+
 (test* "mongo-node-count" #t
        (let1 doc (mongo-node-count *node* *dn* *cn*)
          (and (mongo-ok? doc)
@@ -439,12 +446,15 @@
          (and (ok? doc)
               (vector? (alref doc "values")))))
 
-(test* "mongo-node-dbref-get" #t
-       (let* ([oid (bson-object-id)]
-              [ref (% "$ref" *cn* "$id" oid "$db" *dn*)]
-              [doc (% "_id" oid "foo" "bar")])
-         (and (ok? (mongo-node-insert *node* *dn* *cn* (list doc):safe #t :w 1))
-              (equal? doc (mongo-node-dbref-get *node* "foo" ref)))))
+(test* "mongo-node-group" #t
+       (let1 doc (mongo-node-group *node* *dn* *cn*
+                                   '()
+                                   (bson-code "function(doc,acc){acc.cnt++;}")
+                                   '(("cnt" . 0)))
+         (and (mongo-ok? doc)
+              (vector? (assoc-ref doc "retval"))
+              (number? (assoc-ref doc "count"))
+              (number? (assoc-ref doc "keys")))))
 
 (test* "mongo-node-map-reduce" #t
        (let* ([id  (test-insert 100)]
