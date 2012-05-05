@@ -595,11 +595,12 @@
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (mongo-node-distinct (mongo-ref m :slave #f)
-                         (mongo-database-name db)
-                         (mongo-collection-name col)
-                         key
-                         :query query)))
+    (assoc-ref (mongo-node-distinct (mongo-ref m :slave #f)
+                                    (mongo-database-name db)
+                                    (mongo-collection-name col)
+                                    key
+                                    :query query)
+               "values")))
 
 (define (mongo-map-reduce col map reduce :key query
                                               sort

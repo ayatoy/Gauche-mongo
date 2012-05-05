@@ -236,7 +236,7 @@
        (number? (mongo-count *single-col*)))
 
 (test* "mongo-distinct" #t
-       (ok? (mongo-distinct *single-col* "x")))
+       (vector? (mongo-distinct *single-col* "x")))
 
 (test* "mongo-map-reduce" #t
        (ok? (mongo-map-reduce *single-col*
@@ -449,7 +449,7 @@
        (number? (mongo-count *rs-col*)))
 
 (test* "mongo-distinct" #t
-       (ok? (mongo-distinct *rs-col* "x")))
+       (vector? (mongo-distinct *rs-col* "x")))
 
 (test* "mongo-map-reduce" #t
        (ok? (mongo-map-reduce *rs-col*
