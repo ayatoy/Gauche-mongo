@@ -67,6 +67,7 @@
           mongo-drop-index
           mongo-drop-indexes
           mongo-reindex
+          mongo-count
           mongo-distinct
           mongo-map-reduce
           mongo-dbref?
@@ -575,6 +576,20 @@
     (mongo-node-reindex (mongo-ref m :slave #f)
                         (mongo-database-name db)
                         (mongo-collection-name col))))
+
+(define (mongo-count col :key query fields limit skip)
+  (let* ([db (mongo-collection-database col)]
+         [m  (mongo-database-server db)])
+    (mongo-available! m)
+    (floor->exact
+     (assoc-ref (mongo-node-count (mongo-ref m :slave #f)
+                                  (mongo-database-name db)
+                                  (mongo-collection-name col)
+                                  :query query
+                                  :fields fields
+                                  :limit limit
+                                  :skip skip)
+                "n"))))
 
 (define (mongo-distinct col key :key query)
   (let* ([db (mongo-collection-database col)]

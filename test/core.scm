@@ -232,6 +232,9 @@
 (test* "mongo-reindex" #t
        (ok? (mongo-reindex *single-col*)))
 
+(test* "mongo-count" #t
+       (number? (mongo-count *single-col*)))
+
 (test* "mongo-distinct" #t
        (ok? (mongo-distinct *single-col* "x")))
 
@@ -441,6 +444,9 @@
 
 (test* "mongo-reindex" #t
        (ok? (mongo-reindex *rs-col*)))
+
+(test* "mongo-count" #t
+       (number? (mongo-count *rs-col*)))
 
 (test* "mongo-distinct" #t
        (ok? (mongo-distinct *rs-col* "x")))

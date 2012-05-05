@@ -58,6 +58,7 @@
           mongo-node-auth
           mongo-node-auth-by-table
           mongo-node-reauth
+          mongo-node-count
           mongo-node-distinct
           mongo-node-dbref-get
           mongo-node-map-reduce
@@ -70,7 +71,6 @@
           mongo-cursor-peek!
           mongo-cursor-take!
           mongo-cursor-all!
-          mongo-cursor-count
           mongo-cursor-kill))
 (select-module mongo.node)
 
@@ -467,6 +467,15 @@
 
 ;;;; aggregation
 
+(define (mongo-node-count node dn cn :key query fields limit skip)
+  (mongo-node-command node
+                      dn
+                      `(("count" . ,cn)
+                        ,@(bson-document-part "query" query)
+                        ,@(bson-document-part "fields" fields)
+                        ,@(bson-document-part "limit" limit)
+                        ,@(bson-document-part "skip" skip))))
+
 (define (mongo-node-distinct node dn cn key :key query)
   (mongo-node-command node
                       dn
@@ -582,20 +591,6 @@
       (if-let1 doc (mongo-cursor-next! cursor)
         (loop (cons doc acc))
         (reverse acc)))))
-
-(define (mongo-cursor-count cursor)
-  (let* ([q  (mongo-cursor-query cursor)]
-         [ns (mongo-ns-parse (mongo-message-query-full-collection-name q))])
-    (floor->exact
-     (assoc-ref
-      (mongo-node-command
-       (mongo-cursor-node cursor)
-       (list-ref ns 0)
-       `(("count" . ,(list-ref ns 1))
-         ("query" . ,(mongo-message-query-query q))
-         ("fields" . ,(or (mongo-message-query-return-field-selector q)
-                          '()))))
-      "n"))))
 
 (define (mongo-cursor-kill . cursors)
   (hash-table-for-each

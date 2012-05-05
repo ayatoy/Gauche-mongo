@@ -2,6 +2,7 @@
 (use gauche.threads)
 (use gauche.uvector)
 (use binary.io)
+(use util.list)
 (use srfi-1)
 (use mongo.util)
 (use mongo.bson)
@@ -289,11 +290,6 @@
          (length (mongo-cursor-all!
                   (mongo-node-find *node* *dn* *cn* (% "test-id" id))))))
 
-(test* "mongo-cursor-count" 100
-       (let1 id (test-insert 100)
-         (mongo-cursor-count
-          (mongo-node-find *node* *dn* *cn* (% "test-id" id)))))
-
 ;;;; delete
 
 (test-section "delete")
@@ -432,6 +428,11 @@
 
 (test* "mongo-node-remove-user" #t
        (ok? (mongo-node-remove-user *node* *dn* *user* :safe #t)))
+
+(test* "mongo-node-count" #t
+       (let1 doc (mongo-node-count *node* *dn* *cn*)
+         (and (mongo-ok? doc)
+              (number? (assoc-ref doc "n")))))
 
 (test* "mongo-node-distinct" #t
        (let1 doc (mongo-node-distinct *node* *dn* *cn* "_id")
