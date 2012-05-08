@@ -389,7 +389,9 @@
        (ok? (mongo-node-reset-error *node* *dn*)))
 
 (test* "mongo-node-ensure-index" #t
-       (ok? (mongo-node-ensure-index *node* *dn* *cn* *index-name* (% "i" 1)
+       (ok? (mongo-node-ensure-index *node* *dn* *cn*
+                                     (% "i" 1)
+                                     :name *index-name*
                                      :safe #t)))
 
 (test* "mongo-node-show-indexes" #t

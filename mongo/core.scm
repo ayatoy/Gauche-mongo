@@ -523,23 +523,24 @@
                        :w w
                        :wtimeout wtimeout)))
 
-(define (mongo-ensure-index col name spec :key unique
-                                               drop-dups
-                                               background
-                                               sparse
-                                               (safe #f)
-                                               fsync
-                                               j
-                                               w
-                                               wtimeout)
+(define (mongo-ensure-index col spec :key (name #f)
+                                          unique
+                                          drop-dups
+                                          background
+                                          sparse
+                                          (safe #f)
+                                          fsync
+                                          j
+                                          w
+                                          wtimeout)
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
     (mongo-node-ensure-index (mongo-ref m :slave #f)
                              (mongo-database-name db)
                              (mongo-collection-name col)
-                             name
                              spec
+                             :name name
                              :unique unique
                              :drop-dups drop-dups
                              :background background
@@ -558,14 +559,14 @@
                              (mongo-database-name db)
                              (mongo-collection-name col))))
 
-(define (mongo-drop-index col name)
+(define (mongo-drop-index col pattern)
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
     (mongo-node-drop-index (mongo-ref m :slave #f)
                            (mongo-database-name db)
                            (mongo-collection-name col)
-                           name)))
+                           pattern)))
 
 (define (mongo-drop-indexes col)
   (let* ([db (mongo-collection-database col)]

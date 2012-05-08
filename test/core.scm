@@ -218,7 +218,7 @@
                           :safe #t)))
 
 (test* "mongo-ensure-index" #t
-       (ok? (mongo-ensure-index *single-col* *in* (% "x" 1) :safe #t)))
+       (ok? (mongo-ensure-index *single-col* (% "x" 1) :name *in* :safe #t)))
 
 (test* "mongo-show-indexes" #t
        (list? (mongo-show-indexes *single-col*)))
@@ -437,7 +437,7 @@
                           :safe #t)))
 
 (test* "mongo-ensure-index" #t
-       (ok? (mongo-ensure-index *rs-col* *in* (% "x" 1) :safe #t)))
+       (ok? (mongo-ensure-index *rs-col* (% "x" 1) :name *in* :safe #t)))
 
 (test* "mongo-show-indexes" #t
        (list? (mongo-show-indexes *rs-col*)))

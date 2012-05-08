@@ -56,7 +56,8 @@
           mongo-auth-digest-hexify
           mongo-validate-database-name
           mongo-validate-collection-name
-          mongo-ok?))
+          mongo-ok?
+          mongo-generate-index-name))
 (select-module mongo.util)
 
 ;;;; condition
@@ -382,3 +383,6 @@
 (define (mongo-ok? doc)
   (let1 x (assoc-ref doc "ok")
     (or (equal? x 1) (equal? x 1.0) (equal? x 'true))))
+
+(define (mongo-generate-index-name spec)
+  (string-join (map (^[el] (format "~a_~a" (car el) (cdr el))) spec) "_"))

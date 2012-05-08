@@ -337,21 +337,22 @@
 
 ;;;; index
 
-(define (mongo-node-ensure-index node dn cn name spec :key unique
-                                                           drop-dups
-                                                           background
-                                                           sparse
-                                                           (safe #f)
-                                                           fsync
-                                                           j
-                                                           w
-                                                           wtimeout)
+(define (mongo-node-ensure-index node dn cn spec :key (name #f)
+                                                      unique
+                                                      drop-dups
+                                                      background
+                                                      sparse
+                                                      (safe #f)
+                                                      fsync
+                                                      j
+                                                      w
+                                                      wtimeout)
   (mongo-node-insert node
                      dn
                      "system.indexes"
                      `((("ns" . ,(mongo-ns-compose dn cn))
                         ("key" . ,spec)
-                        ("name" . ,name)
+                        ("name" . ,(or name (mongo-generate-index-name spec)))
                         ,@(bson-document-part "unique" unique)
                         ,@(bson-document-part "dropDups" drop-dups)
                         ,@(bson-document-part "background" background)
@@ -369,8 +370,8 @@
                     "system.indexes"
                     `(("ns" . ,(mongo-ns-compose dn cn))))))
 
-(define (mongo-node-drop-index node dn cn name)
-  (mongo-node-command node dn `(("dropIndexes" . ,cn) ("index" . ,name))))
+(define (mongo-node-drop-index node dn cn pattern)
+  (mongo-node-command node dn `(("dropIndexes" . ,cn) ("index" . ,pattern))))
 
 (define (mongo-node-drop-indexes node dn cn)
   (mongo-node-command node dn `(("dropIndexes" . ,cn) ("index" . "*"))))

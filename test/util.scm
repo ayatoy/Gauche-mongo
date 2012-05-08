@@ -240,4 +240,7 @@
 (test* "mongo-ok? 4" #f
        (mongo-ok? '(("ok" . false))))
 
+(test* "mongo-generate-index-name" "key1_1_key2_-1"
+       (mongo-generate-index-name '(("key1" . 1) ("key2" . -1))))
+
 (test-end)
