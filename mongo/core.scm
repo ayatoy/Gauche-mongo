@@ -426,8 +426,8 @@
                      (if (and (undefined? sort) (undefined? snapshot))
                        query
                        `(("query" . ,query)
-                         ,@(bson-document-part "orderby" sort)
-                         ,@(bson-document-part "$snapshot" snapshot)))
+                         ,@(bson-part "orderby" sort)
+                         ,@(bson-part "$snapshot" snapshot)))
                      :number-to-skip skip
                      :number-to-return (or (and limit (* -1 (abs limit)))
                                            number-to-return)
@@ -663,7 +663,7 @@
 (define (mongo-dbref cn id :optional dn)
   `(("$ref" . ,cn)
     ("$id" . ,id)
-    ,@(bson-document-part "$db" dn)))
+    ,@(bson-part "$db" dn)))
 
 (define (mongo-dbref-get db ref :key (slave #f))
   (let1 m (mongo-database-server db)

@@ -306,9 +306,9 @@
   (mongo-node-command node
                       dn
                       `(("create" . ,cn)
-                        ,@(bson-document-part "capped" capped)
-                        ,@(bson-document-part "size" size)
-                        ,@(bson-document-part "max" max))))
+                        ,@(bson-part "capped" capped)
+                        ,@(bson-part "size" size)
+                        ,@(bson-part "max" max))))
 
 (define (mongo-node-show-collections node dn)
   (mongo-cursor-all! (mongo-node-find node dn "system.namespaces" '())))
@@ -324,10 +324,10 @@
               node
               dn
               `(("getLastError" . 1)
-                ,@(bson-document-part "fsync" fsync)
-                ,@(bson-document-part "j" j)
-                ,@(bson-document-part "w" w)
-                ,@(bson-document-part "wtimeout" wtimeout)))
+                ,@(bson-part "fsync" fsync)
+                ,@(bson-part "j" j)
+                ,@(bson-part "w" w)
+                ,@(bson-part "wtimeout" wtimeout)))
     (if-let1 err (assoc-ref doc "err")
       (when (not (eq? 'null err))
         (error <mongo-request-error> :reason doc err)))))
@@ -353,10 +353,10 @@
                      `((("ns" . ,(mongo-ns-compose dn cn))
                         ("key" . ,spec)
                         ("name" . ,(or name (mongo-generate-index-name spec)))
-                        ,@(bson-document-part "unique" unique)
-                        ,@(bson-document-part "dropDups" drop-dups)
-                        ,@(bson-document-part "background" background)
-                        ,@(bson-document-part "sparse" sparse)))
+                        ,@(bson-part "unique" unique)
+                        ,@(bson-part "dropDups" drop-dups)
+                        ,@(bson-part "background" background)
+                        ,@(bson-part "sparse" sparse)))
                      :safe safe
                      :fsync fsync
                      :j j
@@ -391,7 +391,7 @@
   (mongo-node-command node
                       dn
                       `(("profile" . ,level)
-                        ,@(bson-document-part "slowms" slowms))))
+                        ,@(bson-part "slowms" slowms))))
 
 (define (mongo-node-show-profiling node dn)
   (mongo-cursor-all! (mongo-node-find node dn "system.profile" '())))
@@ -410,7 +410,7 @@
                      `(("user" . ,user))
                      `(("$set" . (("pwd" . ,(mongo-user-digest-hexify user
                                                                       pass))
-                                  ,@(bson-document-part "readOnly" read-only))))
+                                  ,@(bson-part "readOnly" read-only))))
                      :upsert #t
                      :safe safe
                      :fsync fsync
@@ -482,17 +482,17 @@
   (mongo-node-command node
                       dn
                       `(("count" . ,cn)
-                        ,@(bson-document-part "query" query)
-                        ,@(bson-document-part "fields" fields)
-                        ,@(bson-document-part "limit" limit)
-                        ,@(bson-document-part "skip" skip))))
+                        ,@(bson-part "query" query)
+                        ,@(bson-part "fields" fields)
+                        ,@(bson-part "limit" limit)
+                        ,@(bson-part "skip" skip))))
 
 (define (mongo-node-distinct node dn cn key :key query)
   (mongo-node-command node
                       dn
                       `(("distinct" . ,cn)
                         ("key" . ,key)
-                        ,@(bson-document-part "query" query))))
+                        ,@(bson-part "query" query))))
 
 (define (mongo-node-group node dn cn key reduce initial :key keyf
                                                              cond
@@ -504,9 +504,9 @@
                  ("key"     . ,key)
                  ("$reduce"  . ,reduce)
                  ("initial" . ,initial)
-                 ,@(bson-document-part "keyf" keyf)
-                 ,@(bson-document-part "cond" cond)
-                 ,@(bson-document-part "finalize" finalize))))))
+                 ,@(bson-part "keyf" keyf)
+                 ,@(bson-part "cond" cond)
+                 ,@(bson-part "finalize" finalize))))))
 
 (define (mongo-node-map-reduce node dn cn map reduce :key query
                                                           sort
@@ -522,15 +522,15 @@
                       `(("mapreduce" . ,cn)
                         ("map" . ,map)
                         ("reduce" . ,reduce)
-                        ,@(bson-document-part "query" query)
-                        ,@(bson-document-part "sort" sort)
-                        ,@(bson-document-part "limit" limit)
-                        ,@(bson-document-part "out" out)
-                        ,@(bson-document-part "keeptemp" keeptemp)
-                        ,@(bson-document-part "finalize" finalize)
-                        ,@(bson-document-part "scope" scope)
-                        ,@(bson-document-part "jsMode" js-mode)
-                        ,@(bson-document-part "verbose" verbose))))
+                        ,@(bson-part "query" query)
+                        ,@(bson-part "sort" sort)
+                        ,@(bson-part "limit" limit)
+                        ,@(bson-part "out" out)
+                        ,@(bson-part "keeptemp" keeptemp)
+                        ,@(bson-part "finalize" finalize)
+                        ,@(bson-part "scope" scope)
+                        ,@(bson-part "jsMode" js-mode)
+                        ,@(bson-part "verbose" verbose))))
 
 ;;;; cursor
 

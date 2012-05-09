@@ -179,7 +179,7 @@
           write-bson-document-prepare
           write-bson-document
           read-bson-document
-          bson-document-part
+          bson-part
           write-bson-array-prepare
           write-bson-array
           read-bson-array))
@@ -958,7 +958,7 @@
       (loop (cons element elements))
       (reverse elements))))
 
-(define (bson-document-part key obj :optional default)
+(define (bson-part key obj :optional default)
   (if (undefined? obj)
     (if (undefined? default)
       '()
