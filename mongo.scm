@@ -3,4 +3,5 @@
           mongo.bson
           mongo.wire
           mongo.node
-          mongo.core))
+          mongo.core
+          mongo.grid))

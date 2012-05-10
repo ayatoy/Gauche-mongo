@@ -26,7 +26,7 @@ LOCAL_PATHS = "@LOCAL_PATHS@"
 PACKAGE   = Gauche-mongo
 
 ARCHFILES =
-SCMFILES  = $(srcdir)/mongo.scm $(srcdir)/mongo/util.scm $(srcdir)/mongo/bson.scm $(srcdir)/mongo/wire.scm $(srcdir)/mongo/node.scm $(srcdir)/mongo/core.scm
+SCMFILES  = $(srcdir)/mongo.scm $(srcdir)/mongo/util.scm $(srcdir)/mongo/bson.scm $(srcdir)/mongo/wire.scm $(srcdir)/mongo/node.scm $(srcdir)/mongo/core.scm $(srcdir)/mongo/grid.scm
 HEADERS   = 
 
 TARGET    = $(ARCHFILES)

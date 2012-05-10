@@ -17,6 +17,9 @@
 (use mongo.core)
 (test-module 'mongo.core)
 
+(use mongo.grid)
+(test-module 'mongo.grid)
+
 (use mongo)
 (test-module 'mongo)
 
