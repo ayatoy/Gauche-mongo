@@ -6,7 +6,6 @@
   (use parser.peg)
   (use rfc.md5)
   (use srfi-19)
-  (use util.list)
   (use util.match)
   (export <mongo-error>
           mongo-error?
@@ -15,11 +14,6 @@
           mongo-parse-error?
           <mongo-validation-error>
           mongo-validation-error?
-          alist
-          %
-          alref
-          alset
-          alcut
           mutex-lock-recursively!
           mutex-unlock-recursively!
           with-locking-mutex-recursively
@@ -42,15 +36,6 @@
           mongo-address->string
           string->mongo-address
           mongo-uri-parse
-          <mongo-clock>
-          mongo-clock?
-          mongo-clock-thunk
-          mongo-clock-thunk-set!
-          mongo-clock-interval
-          mongo-clock-interval-set!
-          mongo-clock
-          mongo-clock-start!
-          mongo-clock-stop!
           current-millisecond
           mongo-user-digest-hexify
           mongo-auth-digest-hexify
@@ -58,6 +43,7 @@
           mongo-validate-collection-name
           mongo-ok?
           mongo-generate-index-name))
+
 (select-module mongo.util)
 
 ;;;; condition
@@ -71,47 +57,6 @@
 
 (define-condition-type <mongo-validation-error> <mongo-error>
   mongo-validation-error?)
-
-;;;; alist
-
-(define (alist . kvs)
-  (reverse (fold (^[kv r] (cons (cons (car kv) (cadr kv)) r))
-                 '()
-                 (slices kvs 2))))
-
-(define % alist)
-
-(define (alref alist . ks)
-  (fold (^[k alist] (and (list? alist)
-                         (assoc-ref alist k)))
-        alist
-        ks))
-
-(define (alset1 alist k v)
-  (let loop ([alist alist] [acc '()] [e #f])
-    (if (null? alist)
-        (reverse (or (and e acc)
-                     (cons (cons k v) acc)))
-        (let* ([x  (car alist)]
-               [k1 (car x)]
-               [p  (equal? k k1)])
-          (loop (cdr alist)
-                (cons (cons k1 (if p v (cdr x)))
-                      acc)
-                (or e p))))))
-
-(define (alset alist . kvs)
-  (fold (^[kv r] (apply alset1 r kv))
-        alist
-        (slices kvs 2)))
-
-(define (alcut alist . ks)
-  (reverse (fold (^[kv r] (let1 k (car kv)
-                            (if (any (^[x] (equal? k x)) ks)
-                              r
-                              (cons kv r))))
-                 '()
-                 alist)))
 
 ;;;; mutex
 
@@ -300,39 +245,6 @@
      (match auth
        [(user pass) (values user pass addrs db params)]
        [#f          (values #f   #f   addrs db params)])]))
-
-;;;; clock
-
-(define-record-type <mongo-clock> make-mongo-clock mongo-clock?
-  (thunk    mongo-clock-thunk    mongo-clock-thunk-set!)
-  (interval mongo-clock-interval mongo-clock-interval-set!)
-  (thread   mongo-clock-thread   mongo-clock-thread-set!))
-
-(define (mongo-clock-worker cl)
-  (make-thread
-   (^[] (let loop ()
-          ((mongo-clock-thunk cl))
-          (sys-nanosleep (mongo-clock-interval cl))
-          (loop)))))
-
-(define (mongo-clock thunk :optional (interval #e5e9))
-  (rlet1 cl (make-mongo-clock thunk interval #f)
-    (mongo-clock-thread-set! cl (mongo-clock-worker cl))))
-
-(define (mongo-clock-start! cl)
-  (let* ([t (mongo-clock-thread cl)]
-         [s (thread-state t)])
-    (cond [(eq? 'new s) (thread-start! t) #t]
-          [(eq? 'runnable s) #f]
-          [(eq? 'stopped s) (thread-cont! t) #t]
-          [(eq? 'terminated s)
-           (mongo-clock-thread-set! cl (thread-start! (mongo-clock-worker cl)))
-           #t])))
-
-(define (mongo-clock-stop! cl)
-  (let1 t (mongo-clock-thread cl)
-    (and (eq? 'runnable (thread-state t))
-         (begin (thread-terminate! t) #t))))
 
 ;;;; milisecond
 

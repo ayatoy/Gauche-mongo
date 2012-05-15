@@ -7,61 +7,17 @@
 (use mongo.util)
 (test-module 'mongo.util)
 
-;;;; alist
-
-(test-section "alist")
-
-(test* "alist" '(("key1" . "value1") ("key2" . "value2"))
-       (alist "key1" "value1" "key2" "value2"))
-
-(test* "alref 1" "value2"
-       (alref (alist "key1" "value1"
-                     "key2" "value2")
-              "key2"))
-
-(test* "alref 2" "value3"
-       (alref (alist "key1" "value1"
-                     "key2" (alist "key3" "value3")
-                     "key4" "value4")
-              "key2"
-              "key3"))
-
-(test* "alref 3" #f
-       (alref (alist "key1" "value1"
-                     "key2" "value2")
-              "key3"))
-
-(test* "alref 4" #f
-       (alref (alist "key1" "value1"
-                     "key2" "value2"
-                     "key4" "value4")
-              "key2"
-              "key3"))
-
-(test* "alset" '(("key1" . "value4") ("key2" . "value2") ("key3" . "value5"))
-       (alset (alist "key1" "value1"
-                     "key2" "value2"
-                     "key3" "value3")
-              "key1" "value4"
-              "key3" "value5"))
-
-(test* "alcut" '(("key3" . "value3"))
-       (alcut (alist "key1" "value1"
-                     "key2" "value2"
-                     "key3" "value3")
-              "key1"
-              "key2"))
 ;;;; mutex
 
-;;(test-section "mutex")
+(test-section "mutex")
 
 ;;;; u8vector
 
-;;(test-section "u8vector")
+(test-section "u8vector")
 
 ;;;; counter
 
-;;(test-section "counter")
+(test-section "counter")
 
 ;;;; uri
 
@@ -154,20 +110,6 @@
        (receive (user pass addrs db params)
            (mongo-uri-parse "localhost/foo")
          (list user pass (map mongo-address->string addrs) db params)))
-
-;;;; clock
-
-(test-section "clock")
-
-(let* ([i 0]
-       [clock (mongo-clock (^[] (inc! i)) #e3e8)])
-  (test* "mongo-clock" <mongo-clock> (class-of clock))
-  (test* "mongo-clock?" #t (mongo-clock? clock))
-  (test* "mongo-clock-worker" #t
-         (begin (mongo-clock-start! clock)
-                (mongo-clock-stop! clock)
-                (sys-sleep 1)
-                (> i 0))))
 
 ;;;; digest
 

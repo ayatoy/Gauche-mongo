@@ -2,8 +2,6 @@
   (use gauche.collection)
   (use gauche.record)
   (use gauche.threads)
-  (use gauche.time)
-  (use util.list)
   (use util.match)
   (use mongo.util)
   (use mongo.bson)
@@ -19,6 +17,7 @@
           mongo-timeout
           mongo-timeout-set!
           mongo-locking
+          mongo-single?
           mongo-replica-set?
           mongo-connect?
           mongo-disconnect!
@@ -74,6 +73,7 @@
           mongo-dbref?
           mongo-dbref
           mongo-dbref-get))
+
 (select-module mongo.core)
 
 ;;;; constant
@@ -109,7 +109,7 @@
 (define (mongo-fetch-hosts name seeds timeout-limit)
   (let loop ([addrs seeds])
     (if (null? addrs)
-      (if (>= (current-millisecond) timeout-limit)
+      (if (and timeout-limit (>= (current-millisecond) timeout-limit))
         (error <mongo-error> :reason #f "could not connect to server")
         (begin (sys-nanosleep MONGO_CHECK_INTERVAL)
                (loop seeds)))
@@ -133,7 +133,7 @@
       (if master
         (values (vector-ref master 0) (and slave (vector-ref slave 0)))
         (begin (when slave (mongo-node-disconnect! (vector-ref slave 0)))
-               (if (>= (current-millisecond) timeout-limit)
+               (if (and timeout-limit (>= (current-millisecond) timeout-limit))
                  (error <mongo-error> :reason #f "could not connect to master")
                  (begin (sys-nanosleep MONGO_CHECK_INTERVAL)
                         (loop seeds #f #f)))))
@@ -149,7 +149,7 @@
         (loop (cdr addrs) master slave)))))
 
 (define (mongo-connect name seeds timeout)
-  (let* ([limit (+ (current-millisecond) timeout)]
+  (let* ([limit (and timeout (+ (current-millisecond) timeout))]
          [hosts (if name (mongo-fetch-hosts name seeds limit) seeds)])
     (receive (master slave) (mongo-fetch-nodes name hosts limit)
       (make-mongo master slave hosts name timeout (make-mutex)))))
@@ -170,11 +170,12 @@
 (define (mongo-sync! m)
   (mongo-locking m
     (mongo-disconnect! m)
-    (let* ([name   (mongo-name m)]
-           [seeds  (mongo-hosts m)]
-           [limit  (+ (current-millisecond) (mongo-timeout m))]
-           [authed (mongo-node-authed (mongo-master m))]
-           [hosts  (if name (mongo-fetch-hosts name seeds limit) seeds)])
+    (let* ([name    (mongo-name m)]
+           [seeds   (mongo-hosts m)]
+           [timeout (mongo-timeout m)]
+           [limit   (and timeout (+ (current-millisecond) timeout))]
+           [authed  (mongo-node-authed (mongo-master m))]
+           [hosts   (if name (mongo-fetch-hosts name seeds limit) seeds)])
       (receive (master slave) (mongo-fetch-nodes name hosts limit)
         (mongo-master-set! m master)
         (mongo-slave-set! m slave)
@@ -196,18 +197,17 @@
 (define (mongo uri)
   (define (param-ref alist str) (assoc-ref alist str #f string-ci=?))
   (receive (user pass addrs db params) (mongo-uri-parse uri)
-    (let1 m (mongo-connect (param-ref params "replicaSet")
-                           addrs
-                           (or (param-ref params "connectTimeoutMS")
-                               MONGO_CONNECT_TIMEOUT))
+    (let1 m (mongo-connect
+             (param-ref params "replicaSet")
+             addrs
+             (if-let1 timeout (param-ref params "connectTimeoutMS")
+               (and (not (string-ci=? timeout "false"))
+                    (x->integer timeout))
+               MONGO_CONNECT_TIMEOUT))
       (rlet1 x (if db (mongo-database m db) m)
         (when (and user pass)
-          (guard (e [(<mongo-request-error> e)
-                     (mongo-disconnect! m)
-                     (raise e)])
-            (mongo-auth (mongo-database m (or db "admin"))
-                        user
-                        pass)))))))
+          (guard (e [(<mongo-request-error> e) (mongo-disconnect! m) (raise e)])
+            (mongo-auth (mongo-database m (or db "admin")) user pass)))))))
 
 (define (mongo-admin m query :key (slave #f))
   (mongo-available! m)
@@ -215,7 +215,7 @@
 
 (define (mongo-ping m :key (slave #f))
   (mongo-available! m)
-  (mongo-node-ping (mongo-ref m :slave slave)))
+  (mongo-node-admin (mongo-ref m :slave slave) '(("ping" . 1))))
 
 (define (mongo-ismaster m :key (slave #f))
   (mongo-available! m)
@@ -223,15 +223,15 @@
 
 (define (mongo-server-status m :key (slave #f))
   (mongo-available! m)
-  (mongo-node-server-status (mongo-ref m :slave slave)))
+  (mongo-node-admin (mongo-ref m :slave slave) '(("serverStatus" . 1))))
 
 (define (mongo-replset-status m :key (slave #f))
   (mongo-available! m)
-  (mongo-node-replset-status (mongo-ref m :slave slave)))
+  (mongo-node-admin (mongo-ref m :slave slave) '(("replSetGetStatus" . 1))))
 
 (define (mongo-show-databases m :key (slave #f))
   (mongo-available! m)
-  (mongo-node-show-databases (mongo-ref m :slave slave)))
+  (mongo-node-admin (mongo-ref m :slave slave) '(("listDatabases" . 1))))
 
 ;;;; database
 
@@ -255,14 +255,16 @@
 (define (mongo-drop-database db)
   (let1 m (mongo-database-server db)
     (mongo-available! m)
-    (mongo-node-drop-database (mongo-ref m :slave #f)
-                              (mongo-database-name db))))
+    (mongo-node-command (mongo-ref m :slave #f)
+                        (mongo-database-name db)
+                        '(("dropDatabase" . 1)))))
 
 (define (mongo-get-last-error db :key (slave #f)
-                                      fsync
-                                      j
-                                      w
-                                      wtimeout)
+                                      (fsync (undefined))
+                                      (j (undefined))
+                                      (w (undefined))
+                                      (wtimeout (undefined))
+                                      (thrown #f))
   (let1 m (mongo-database-server db)
     (mongo-available! m)
     (mongo-node-get-last-error (mongo-ref m :slave slave)
@@ -270,7 +272,8 @@
                                :fsync fsync
                                :j j
                                :w w
-                               :wtimeout wtimeout)))
+                               :wtimeout wtimeout
+                               :thrown thrown)))
 
 (define (mongo-reset-error db :key (slave #f))
   (let1 m (mongo-database-server db)
@@ -281,34 +284,44 @@
 (define (mongo-show-collections db)
   (let1 m (mongo-database-server db)
     (mongo-available! m)
-    (mongo-node-show-collections (mongo-ref m :slave #f)
-                                 (mongo-database-name db))))
+    (mongo-cursor-all!
+     (mongo-node-find (mongo-ref m :slave #f)
+                      (mongo-database-name db)
+                      "system.namespaces"
+                      '()))))
 
 (define (mongo-profiling-status db :key (slave #f))
   (let1 m (mongo-database-server db)
     (mongo-available! m)
-    (mongo-node-profiling-status (mongo-ref m :slave slave)
-                                 (mongo-database-name db))))
+    (mongo-node-command (mongo-ref m :slave slave)
+                        (mongo-database-name db)
+                        '(("profile" . -1)))))
 
 (define (mongo-get-profiling-level db :key (slave #f))
   (let1 m (mongo-database-server db)
     (mongo-available! m)
-    (mongo-node-get-profiling-level (mongo-ref m :slave slave)
-                                    (mongo-database-name db))))
+    (assoc-ref (mongo-node-command (mongo-ref m :slave slave)
+                                   (mongo-database-name db)
+                                   '(("profile" . -1)))
+               "was")))
 
-(define (mongo-set-profiling-level db level :key (slave #f) slowms)
+(define (mongo-set-profiling-level db level :key (slave #f)
+                                                 (slowms (undefined)))
   (let1 m (mongo-database-server db)
     (mongo-available! m)
-    (mongo-node-set-profiling-level (mongo-ref m :slave slave)
-                                    (mongo-database-name db)
-                                    level
-                                    :slowms slowms)))
+    (mongo-node-command (mongo-ref m :slave slave)
+                        (mongo-database-name db)
+                        `(("profile" . ,level)
+                          ,@(bson-part "slowms" slowms)))))
 
 (define (mongo-show-profiling db :key (slave #f))
   (let1 m (mongo-database-server db)
     (mongo-available! m)
-    (mongo-node-show-profiling (mongo-ref m :slave slave)
-                               (mongo-database-name db))))
+    (mongo-cursor-all!
+     (mongo-node-find (mongo-ref m :slave slave)
+                      (mongo-database-name db)
+                      "system.profile"
+                      '()))))
 
 (define (mongo-auth db user pass)
   (let ([m  (mongo-database-server db)]
@@ -318,40 +331,44 @@
             (if-let1 slave (mongo-slave m)
               (mongo-node-auth slave dn user pass)))))
 
-(define (mongo-add-user db user pass :key read-only
+(define (mongo-add-user db user pass :key (read-only (undefined))
                                           (safe #f)
-                                          fsync
-                                          j
-                                          w
-                                          wtimeout)
+                                          (fsync (undefined))
+                                          (j (undefined))
+                                          (w (undefined))
+                                          (wtimeout (undefined)))
   (let1 m (mongo-database-server db)
     (mongo-available! m)
-    (mongo-node-add-user (mongo-ref m :slave #f)
-                         (mongo-database-name db)
-                         user
-                         pass
-                         :read-only read-only
-                         :safe safe
-                         :fsync fsync
-                         :j j
-                         :w w
-                         :wtimeout wtimeout)))
+    (mongo-node-update (mongo-ref m :slave #f)
+                       (mongo-database-name db)
+                       "system.users"
+                       `(("user" . ,user))
+                       `(("$set" . (("pwd" . ,(mongo-user-digest-hexify user
+                                                                        pass))
+                                    ,@(bson-part "readOnly" read-only))))
+                       :upsert #t
+                       :safe safe
+                       :fsync fsync
+                       :j j
+                       :w w
+                       :wtimeout wtimeout)))
 
 (define (mongo-remove-user db user :key (safe #f)
-                                        fsync
-                                        j
-                                        w
-                                        wtimeout)
+                                        (fsync (undefined))
+                                        (j (undefined))
+                                        (w (undefined))
+                                        (wtimeout (undefined)))
   (let1 m (mongo-database-server db)
     (mongo-available! m)
-    (mongo-node-remove-user (mongo-ref m :slave #f)
-                            (mongo-database-name db)
-                            user
-                            :safe safe
-                            :fsync fsync
-                            :j j
-                            :w w
-                            :wtimeout wtimeout)))
+    (mongo-node-delete (mongo-ref m :slave #f)
+                       (mongo-database-name db)
+                       "system.users"
+                       `(("user" . ,user))
+                       :safe safe
+                       :fsync fsync
+                       :j j
+                       :w w
+                       :wtimeout wtimeout)))
 
 ;;;; collection
 
@@ -369,30 +386,31 @@
   (mongo-ns-compose (mongo-database-name (mongo-collection-database col))
                     (mongo-collection-name col)))
 
-(define (mongo-create-collection col :key capped
-                                          size
-                                          max)
+(define (mongo-create-collection col :key (capped (undefined))
+                                          (size (undefined))
+                                          (max (undefined)))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (mongo-node-create-collection (mongo-ref m :slave #f)
-                                  (mongo-database-name db)
-                                  (mongo-collection-name col)
-                                  :capped capped
-                                  :size size
-                                  :max max)))
+    (mongo-node-command (mongo-ref m :slave #f)
+                        (mongo-database-name db)
+                        `(("create" . ,(mongo-collection-name col))
+                          ,@(bson-part "capped" capped)
+                          ,@(bson-part "size" size)
+                          ,@(bson-part "max" max)))))
 
 (define (mongo-drop-collection col)
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (mongo-node-drop-collection (mongo-ref m :slave #f)
-                                (mongo-database-name db)
-                                (mongo-collection-name col))))
+    (mongo-node-command (mongo-ref m :slave #f)
+                        (mongo-database-name db)
+                        `(("drop" . ,(mongo-collection-name col))))))
 
 (define (mongo-find1 col query :key (slave #f)
                                     (select #f)
-                                    (skip 0))
+                                    (skip 0)
+                                    (sort (undefined)))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
@@ -402,70 +420,63 @@
                       query
                       :number-to-skip skip
                       :return-field-selector select
-                      :slave-ok slave)))
+                      :slave-ok slave
+                      :orderby sort)))
 
 (define (mongo-find col query :key (slave #f)
                                    (select #f)
                                    (skip 0)
                                    (limit #f)
+                                   (batch 0)
+                                   (tailable #f)
+                                   (oplog-replay #f)
+                                   (timeout #t)
+                                   (await #f)
+                                   (exhaust #f)
+                                   (partial #f)
                                    (sort (undefined))
                                    (snapshot (undefined))
-                                   (number-to-return 0)
-                                   (tailable-cursor #f)
-                                   (oplog-replay #f)
-                                   (no-cursor-timeout #f)
-                                   (await-data #f)
-                                   (exhaust #f)
-                                   (partial #f))
+                                   (hint (undefined))
+                                   (explain (undefined))
+                                   (max-scan (undefined))
+                                   (return-key (undefined))
+                                   (show-disk-loc (undefined))
+                                   (cursor #f))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (mongo-node-find (mongo-ref m :slave slave)
-                     (mongo-database-name db)
-                     (mongo-collection-name col)
-                     (if (and (undefined? sort) (undefined? snapshot))
-                       query
-                       `(("query" . ,query)
-                         ,@(bson-part "orderby" sort)
-                         ,@(bson-part "$snapshot" snapshot)))
-                     :number-to-skip skip
-                     :number-to-return (or (and limit (* -1 (abs limit)))
-                                           number-to-return)
-                     :return-field-selector select
-                     :tailable-cursor tailable-cursor
-                     :slave-ok slave
-                     :oplog-replay oplog-replay
-                     :no-cursor-timeout no-cursor-timeout
-                     :await-data await-data
-                     :exhaust exhaust
-                     :partial partial)))
+    (let1 cur (mongo-node-find
+               (mongo-ref m :slave slave)
+               (mongo-database-name db)
+               (mongo-collection-name col)
+               query
+               :number-to-skip skip
+               :number-to-return (or (and limit (* -1 (abs limit))) batch)
+               :return-field-selector select
+               :tailable-cursor tailable
+               :slave-ok slave
+               :oplog-replay oplog-replay
+               :no-cursor-timeout (not timeout)
+               :await-data await
+               :exhaust exhaust
+               :partial partial
+               :orderby sort
+               :hint hint
+               :explain explain
+               :max-scan max-scan
+               :return-key return-key
+               :show-disk-loc show-disk-loc)
+      (if cursor cur (generator->lseq (mongo-cursor->generator cur))))))
 
-(define (mongo-insert1 col doc :key (continue #t)
-                                    (safe #f)
-                                    fsync
-                                    j
-                                    w
-                                    wtimeout)
-  (let* ([db (mongo-collection-database col)]
-         [m  (mongo-database-server db)])
-    (mongo-available! m)
-    (mongo-node-insert (mongo-ref m :slave #f)
-                       (mongo-database-name db)
-                       (mongo-collection-name col)
-                       (list doc)
-                       :continue-on-error continue
-                       :safe safe
-                       :fsync fsync
-                       :j j
-                       :w w
-                       :wtimeout wtimeout)))
+(define (mongo-insert1 col doc . opts)
+  (apply mongo-insert col (list doc) opts))
 
 (define (mongo-insert col docs :key (continue #t)
                                     (safe #f)
-                                    fsync
-                                    j
-                                    w
-                                    wtimeout)
+                                    (fsync (undefined))
+                                    (j (undefined))
+                                    (w (undefined))
+                                    (wtimeout (undefined)))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
@@ -483,10 +494,10 @@
 (define (mongo-update col query update :key (upsert #f)
                                             (single #f)
                                             (safe #f)
-                                            fsync
-                                            j
-                                            w
-                                            wtimeout)
+                                            (fsync (undefined))
+                                            (j (undefined))
+                                            (w (undefined))
+                                            (wtimeout (undefined)))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
@@ -505,10 +516,10 @@
 
 (define (mongo-delete col query :key (single #f)
                                      (safe #f)
-                                     fsync
-                                     j
-                                     w
-                                     wtimeout)
+                                     (fsync (undefined))
+                                     (j (undefined))
+                                     (w (undefined))
+                                     (wtimeout (undefined)))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
@@ -524,134 +535,144 @@
                        :wtimeout wtimeout)))
 
 (define (mongo-ensure-index col spec :key (name #f)
-                                          unique
-                                          drop-dups
-                                          background
-                                          sparse
+                                          (unique (undefined))
+                                          (drop-dups (undefined))
+                                          (background (undefined))
+                                          (sparse (undefined))
                                           (safe #f)
-                                          fsync
-                                          j
-                                          w
-                                          wtimeout)
+                                          (fsync (undefined))
+                                          (j (undefined))
+                                          (w (undefined))
+                                          (wtimeout (undefined)))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (mongo-node-ensure-index (mongo-ref m :slave #f)
-                             (mongo-database-name db)
-                             (mongo-collection-name col)
-                             spec
-                             :name name
-                             :unique unique
-                             :drop-dups drop-dups
-                             :background background
-                             :sparse sparse
-                             :safe safe
-                             :fsync fsync
-                             :j j
-                             :w w
-                             :wtimeout wtimeout)))
+    (mongo-node-insert (mongo-ref m :slave #f)
+                       (mongo-database-name db)
+                       "system.indexes"
+                       `((("ns"   . ,(mongo-fullname col))
+                          ("key"  . ,spec)
+                          ("name" . ,(or name (mongo-generate-index-name spec)))
+                          ,@(bson-part "unique" unique)
+                          ,@(bson-part "dropDups" drop-dups)
+                          ,@(bson-part "background" background)
+                          ,@(bson-part "sparse" sparse)))
+                       :safe safe
+                       :fsync fsync
+                       :j j
+                       :w w
+                       :wtimeout wtimeout)))
 
 (define (mongo-show-indexes col)
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (mongo-node-show-indexes (mongo-ref m :slave #f)
-                             (mongo-database-name db)
-                             (mongo-collection-name col))))
+    (mongo-cursor-all!
+     (mongo-node-find (mongo-ref m :slave #f)
+                      (mongo-database-name db)
+                      "system.indexes"
+                      `(("ns" . ,(mongo-fullname col)))))))
 
 (define (mongo-drop-index col pattern)
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (mongo-node-drop-index (mongo-ref m :slave #f)
-                           (mongo-database-name db)
-                           (mongo-collection-name col)
-                           pattern)))
+    (mongo-node-command (mongo-ref m :slave #f)
+                        (mongo-database-name db)
+                        `(("dropIndexes" . ,(mongo-collection-name col))
+                          ("index"       . ,pattern)))))
 
 (define (mongo-drop-indexes col)
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (mongo-node-drop-indexes (mongo-ref m :slave #f)
-                             (mongo-database-name db)
-                             (mongo-collection-name col))))
+    (mongo-node-command (mongo-ref m :slave #f)
+                        (mongo-database-name db)
+                        `(("dropIndexes" . ,(mongo-collection-name col))
+                          ("index"       . "*")))))
 
 (define (mongo-reindex col)
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (mongo-node-reindex (mongo-ref m :slave #f)
+    (mongo-node-command (mongo-ref m :slave #f)
                         (mongo-database-name db)
-                        (mongo-collection-name col))))
+                        `(("reIndex" . ,(mongo-collection-name col))))))
 
-(define (mongo-count col :key query fields limit skip)
+(define (mongo-count col :key (query (undefined))
+                              (fields (undefined))
+                              (limit (undefined))
+                              (skip (undefined)))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
     (floor->exact
-     (assoc-ref (mongo-node-count (mongo-ref m :slave #f)
-                                  (mongo-database-name db)
-                                  (mongo-collection-name col)
-                                  :query query
-                                  :fields fields
-                                  :limit limit
-                                  :skip skip)
+     (assoc-ref (mongo-node-command
+                 (mongo-ref m :slave #f)
+                 (mongo-database-name db)
+                 `(("count" . ,(mongo-collection-name col))
+                   ,@(bson-part "query" query)
+                   ,@(bson-part "fields" fields)
+                   ,@(bson-part "limit" limit)
+                   ,@(bson-part "skip" skip)))
                 "n"))))
 
-(define (mongo-distinct col key :key query)
+(define (mongo-distinct col key :key (query (undefined)))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (assoc-ref (mongo-node-distinct (mongo-ref m :slave #f)
-                                    (mongo-database-name db)
-                                    (mongo-collection-name col)
-                                    key
-                                    :query query)
+    (assoc-ref (mongo-node-command
+                (mongo-ref m :slave #f)
+                (mongo-database-name db)
+                `(("distinct" . ,(mongo-collection-name col))
+                  ("key"      . ,key)
+                  ,@(bson-part "query" query)))
                "values")))
 
-(define (mongo-group col key reduce initial :key keyf
-                                                 cond
-                                                 finalize)
+(define (mongo-group col key reduce initial :key (keyf (undefined))
+                                                 (cond (undefined))
+                                                 (finalize (undefined)))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (assoc-ref (mongo-node-group (mongo-ref m :slave #f)
-                                 (mongo-database-name db)
-                                 (mongo-collection-name col)
-                                 key
-                                 reduce
-                                 initial
-                                 :keyf keyf
-                                 :cond cond
-                                 :finalize finalize)
+    (assoc-ref (mongo-node-command
+                (mongo-ref m :slave #f)
+                (mongo-database-name db)
+                `(("group" . (("ns"      . ,(mongo-collection-name col))
+                              ("key"     . ,key)
+                              ("$reduce" . ,reduce)
+                              ("initial" . ,initial)
+                              ,@(bson-part "keyf" keyf)
+                              ,@(bson-part "cond" cond)
+                              ,@(bson-part "finalize" finalize)))))
                "retval")))
 
-(define (mongo-map-reduce col map reduce :key query
-                                              sort
-                                              limit
-                                              out
-                                              keeptemp
-                                              finalize
-                                              scope
-                                              js-mode
-                                              verbose)
+(define (mongo-map-reduce col map reduce :key (query (undefined))
+                                              (sort (undefined))
+                                              (limit (undefined))
+                                              (out (undefined))
+                                              (keeptemp (undefined))
+                                              (finalize (undefined))
+                                              (scope (undefined))
+                                              (js-mode (undefined))
+                                              (verbose (undefined)))
   (let* ([db (mongo-collection-database col)]
          [m  (mongo-database-server db)])
     (mongo-available! m)
-    (mongo-node-map-reduce (mongo-ref m :slave #f)
-                           (mongo-database-name db)
-                           (mongo-collection-name col)
-                           map
-                           reduce
-                           :query query
-                           :sort sort
-                           :limit limit
-                           :out out
-                           :keeptemp keeptemp
-                           :finalize finalize
-                           :scope scope
-                           :js-mode js-mode
-                           :verbose verbose)))
+    (mongo-node-command (mongo-ref m :slave #f)
+                        (mongo-database-name db)
+                        `(("mapreduce" . ,(mongo-collection-name col))
+                          ("map"       . ,map)
+                          ("reduce"    . ,reduce)
+                          ,@(bson-part "query" query)
+                          ,@(bson-part "sort" sort)
+                          ,@(bson-part "limit" limit)
+                          ,@(bson-part "out" out)
+                          ,@(bson-part "keeptemp" keeptemp)
+                          ,@(bson-part "finalize" finalize)
+                          ,@(bson-part "scope" scope)
+                          ,@(bson-part "jsMode" js-mode)
+                          ,@(bson-part "verbose" verbose)))))
 
 ;;;; dbref
 
@@ -661,14 +682,13 @@
     [_ #f]))
 
 (define (mongo-dbref cn id :optional dn)
-  `(("$ref" . ,cn)
-    ("$id" . ,id)
-    ,@(bson-part "$db" dn)))
+  `(("$ref" . ,cn) ("$id" . ,id) ,@(bson-part "$db" dn)))
 
 (define (mongo-dbref-get db ref :key (slave #f))
   (let1 m (mongo-database-server db)
     (mongo-available! m)
-    (mongo-node-dbref-get (mongo-ref m :slave slave)
-                          (mongo-database-name db)
-                          ref
-                          :slave-ok slave)))
+    (mongo-node-find1 (mongo-ref m :slave slave)
+                      (or (assoc-ref ref "$db") (mongo-database-name db))
+                      (assoc-ref ref "$ref")
+                      `(("_id" . ,(assoc-ref ref "$id")))
+                      :slave-ok slave)))

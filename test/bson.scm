@@ -1,8 +1,9 @@
 (use gauche.test)
 (use gauche.uvector)
 (use binary.io)
-(use srfi-1)
 (use srfi-42)
+
+;;;; prep
 
 (define (invariance x w r)
   (call-with-input-string
@@ -28,6 +29,56 @@
 
 (use mongo.bson)
 (test-module 'mongo.bson)
+
+;;;; constant
+
+(test-section "constant")
+
+(test* "BSON_ZERO" 0 BSON_ZERO)
+
+(test* "BSON_INT32_MIN" -2147483648 BSON_INT32_MIN)
+(test* "BSON_INT32_MAX" 2147483647 BSON_INT32_MAX)
+(test* "BSON_INT64_MIN" -9223372036854775808 BSON_INT64_MIN)
+(test* "BSON_INT64_MAX" 9223372036854775807 BSON_INT64_MAX)
+
+(test* "BSON_ZERO_SIZE" 1 BSON_ZERO_SIZE)
+(test* "BSON_INT32_SIZE" 4 BSON_INT32_SIZE)
+(test* "BSON_INT64_SIZE" 8 BSON_INT64_SIZE)
+(test* "BSON_DOUBLE_SIZE" 8 BSON_DOUBLE_SIZE)
+(test* "BSON_OBJECT_ID_SIZE" 12 BSON_OBJECT_ID_SIZE)
+(test* "BSON_SUBTYPE_SIZE" 1   BSON_SUBTYPE_SIZE)
+(test* "BSON_BOOLEAN_SIZE" 1   BSON_BOOLEAN_SIZE)
+
+(test* "BSON_FALSE" #x00 BSON_FALSE)
+(test* "BSON_TRUE" #x01 BSON_TRUE)
+
+(test* "BSON_SUBTYPE_GENERIC" #x00 BSON_SUBTYPE_GENERIC)
+(test* "BSON_SUBTYPE_FUNCTION" #x01 BSON_SUBTYPE_FUNCTION)
+(test* "BSON_SUBTYPE_OLD" #x02 BSON_SUBTYPE_OLD)
+(test* "BSON_SUBTYPE_UUID" #x03 BSON_SUBTYPE_UUID)
+(test* "BSON_SUBTYPE_MD5" #x05 BSON_SUBTYPE_MD5)
+(test* "BSON_SUBTYPE_USER_DEFINED" #x80 BSON_SUBTYPE_USER_DEFINED)
+
+(test* "BSON_TYPE_DOUBLE" #x01 BSON_TYPE_DOUBLE)
+(test* "BSON_TYPE_STRING" #x02 BSON_TYPE_STRING)
+(test* "BSON_TYPE_DOCUMENT" #x03 BSON_TYPE_DOCUMENT)
+(test* "BSON_TYPE_ARRAY" #x04 BSON_TYPE_ARRAY)
+(test* "BSON_TYPE_BINARY" #x05 BSON_TYPE_BINARY)
+(test* "BSON_TYPE_UNDEFINED" #x06 BSON_TYPE_UNDEFINED)
+(test* "BSON_TYPE_OBJECT_ID" #x07 BSON_TYPE_OBJECT_ID)
+(test* "BSON_TYPE_BOOLEAN" #x08 BSON_TYPE_BOOLEAN)
+(test* "BSON_TYPE_DATETIME" #x09 BSON_TYPE_DATETIME)
+(test* "BSON_TYPE_NULL" #x0A BSON_TYPE_NULL)
+(test* "BSON_TYPE_REGEXP" #x0B BSON_TYPE_REGEXP)
+(test* "BSON_TYPE_DBPOINTER" #x0C BSON_TYPE_DBPOINTER)
+(test* "BSON_TYPE_CODE" #x0D BSON_TYPE_CODE)
+(test* "BSON_TYPE_SYMBOL" #x0E BSON_TYPE_SYMBOL)
+(test* "BSON_TYPE_CODE/SCOPE" #x0F BSON_TYPE_CODE/SCOPE)
+(test* "BSON_TYPE_INT32" #x10 BSON_TYPE_INT32)
+(test* "BSON_TYPE_TIMESTAMP" #x11 BSON_TYPE_TIMESTAMP)
+(test* "BSON_TYPE_INT64" #x12 BSON_TYPE_INT64)
+(test* "BSON_TYPE_MIN_KEY" #xFF BSON_TYPE_MIN_KEY)
+(test* "BSON_TYPE_MAX_KEY" #x7F BSON_TYPE_MAX_KEY)
 
 ;;;; int32
 
@@ -628,32 +679,32 @@
 
 (test-section "document")
 
-(define *doc* `(("int32" . 2147483647)
-                ("int64" . 2147483648)
-                ("double" .  5.05)
-                ("string" . "foo")
-                ("null" . ,(bson-null))
-                ("false" . ,(bson-false))
-                ("true" . ,(bson-true))
-                ("undefined" . ,(bson-undefined))
-                ("min-key" . ,(bson-min))
-                ("max-key" . ,(bson-max))
-                ("bin-generic" . ,(bson-binary 'generic (u8vector 0)))
+(define *doc* `(("int32"        . 2147483647)
+                ("int64"        . 2147483648)
+                ("double"       . 5.05)
+                ("string"       . "foo")
+                ("null"         . ,(bson-null))
+                ("false"        . ,(bson-false))
+                ("true"         . ,(bson-true))
+                ("undefined"    . ,(bson-undefined))
+                ("min-key"      . ,(bson-min))
+                ("max-key"      . ,(bson-max))
+                ("bin-generic"  . ,(bson-binary 'generic (u8vector 0)))
                 ("bin-function" . ,(bson-binary 'function (u8vector 0)))
-                ("bin-old" . ,(bson-binary 'old (u8vector 0)))
-                ("bin-uuid" . ,(bson-binary 'uuid (u8vector 0)))
-                ("bin-md5" . ,(bson-binary 'md5 (u8vector 0)))
-                ("bin-udef" . ,(bson-binary 'user-defined (u8vector 0)))
-                ("datetime" . ,(bson-datetime))
-                ("timestamp" . ,(bson-timestamp))
-                ("object-id" . ,(bson-object-id))
-                ("regexp" . ,(bson-regexp "foo" "bar"))
-                ("dbpointer" . ,(bson-dbpointer "foo.bar" (bson-object-id)))
-                ("code" . ,(bson-code "foo"))
-                ("code/scope" . ,(bson-code/scope "foo" '(("bar" . "baz"))))
-                ("symbol" . ,(bson-symbol "foo"))
-                ("document" . (("foo" . "foo") ("bar" . "bar")))
-                ("array" . ,(vector "foo" "bar" "baz"))))
+                ("bin-old"      . ,(bson-binary 'old (u8vector 0)))
+                ("bin-uuid"     . ,(bson-binary 'uuid (u8vector 0)))
+                ("bin-md5"      . ,(bson-binary 'md5 (u8vector 0)))
+                ("bin-udef"     . ,(bson-binary 'user-defined (u8vector 0)))
+                ("datetime"     . ,(bson-datetime))
+                ("timestamp"    . ,(bson-timestamp))
+                ("object-id"    . ,(bson-object-id))
+                ("regexp"       . ,(bson-regexp "foo" "bar"))
+                ("dbpointer"    . ,(bson-dbpointer "foo.bar" (bson-object-id)))
+                ("code"         . ,(bson-code "foo"))
+                ("code/scope"   . ,(bson-code/scope "foo" '(("bar" . "baz"))))
+                ("symbol"       . ,(bson-symbol "foo"))
+                ("document"     . (("foo" . "foo") ("bar" . "bar")))
+                ("array"        . ,(vector "foo" "bar" "baz"))))
 
 (test* "bson-document constructor" #t
        (bson-document? *doc*))
@@ -671,6 +722,15 @@
 (test* "read-bson-document exception 2" (test-error <bson-read-error>)
        (call-with-input-string "\x12\0\0\0"
          (^[in] (read-bson-document in))))
+
+(test* "bson-part" '()
+       (bson-part "key" (undefined)))
+
+(test* "bson-part" '(("key" . "value"))
+       (bson-part "key" "value"))
+
+(test* "bson-part" '(("key" . "default"))
+       (bson-part "key" (undefined) "default"))
 
 ;;;; array
 

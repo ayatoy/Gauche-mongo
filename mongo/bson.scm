@@ -183,6 +183,7 @@
           write-bson-array-prepare
           write-bson-array
           read-bson-array))
+
 (select-module mongo.bson)
 
 ;;;; constant

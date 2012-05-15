@@ -36,8 +36,11 @@
           <mongo-message>
           mongo-message?
           mongo-message-length
+          mongo-message-length-set!
           mongo-message-request-id
+          mongo-message-request-id-set!
           mongo-message-response-to
+          mongo-message-response-to-set!
           mongo-message-op-code
           <mongo-message-update>
           mongo-message-update?
@@ -102,6 +105,7 @@
           mongo-message-reply-shard-config-stale?
           mongo-message-reply-await-capable?
           mongo-message-reply-document))
+
 (select-module mongo.wire)
 
 ;;;; constant
@@ -223,9 +227,9 @@
 (define-record-type <mongo-message>
   make-mongo-message
   mongo-message?
-  (length      mongo-message-length mongo-message-length-set!)
-  (request-id  mongo-message-request-id)
-  (response-to mongo-message-response-to)
+  (length      mongo-message-length      mongo-message-length-set!)
+  (request-id  mongo-message-request-id  mongo-message-request-id-set!)
+  (response-to mongo-message-response-to mongo-message-response-to-set!)
   (op-code     mongo-message-op-code))
 
 (define (write-header ms oport)
@@ -362,7 +366,14 @@
                                                    (no-cursor-timeout #f)
                                                    (await-data #f)
                                                    (exhaust #f)
-                                                   (partial #f))
+                                                   (partial #f)
+                                                   (orderby (undefined))
+                                                   (hint (undefined))
+                                                   (explain (undefined))
+                                                   (snapshot (undefined))
+                                                   (max-scan (undefined))
+                                                   (return-key (undefined))
+                                                   (show-disk-loc (undefined)))
   (make-mongo-message-query #f
                             request-id
                             response-to
@@ -377,7 +388,22 @@
                             collection
                             number-to-skip
                             number-to-return
-                            query
+                            (if (and (undefined? orderby)
+                                     (undefined? hint)
+                                     (undefined? explain)
+                                     (undefined? snapshot)
+                                     (undefined? max-scan)
+                                     (undefined? return-key)
+                                     (undefined? show-disk-loc))
+                              query
+                              `(("$query" . ,query)
+                                ,@(bson-part "$orderby" orderby)
+                                ,@(bson-part "$hint" hint)
+                                ,@(bson-part "$explain" explain)
+                                ,@(bson-part "$snapshot" snapshot)
+                                ,@(bson-part "$maxScan" max-scan)
+                                ,@(bson-part "$returnKey" return-key)
+                                ,@(bson-part "$showDiskLoc" show-disk-loc)))
                             return-field-selector))
 
 ;;;; getmore
@@ -457,7 +483,7 @@
                              (if single-remove 1 0)
                              selector))
 
-;;;; kill cursors
+;;;; kill-cursors
 
 (define-record-type (<mongo-message-kill-cursors> <mongo-message>)
   make-mongo-message-kill-cursors

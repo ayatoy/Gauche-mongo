@@ -1,10 +1,10 @@
 (define-module mongo.node
   (use gauche.collection)
+  (use gauche.generator)
   (use gauche.net)
   (use gauche.record)
   (use gauche.threads)
   (use gauche.time)
-  (use util.list)
   (use mongo.util)
   (use mongo.bson)
   (use mongo.wire)
@@ -21,6 +21,8 @@
           mongo-node-connect*
           mongo-node-connect?
           mongo-node-disconnect!
+          mongo-node-generate-id!
+          mongo-node-reset-id!
           mongo-node-available!
           mongo-node-request
           mongo-node-authed-put!
@@ -32,47 +34,32 @@
           mongo-node-delete
           mongo-node-command
           mongo-node-admin
-          mongo-node-ping
           mongo-node-round-trip
           mongo-node-ismaster
-          mongo-node-server-status
-          mongo-node-replset-status
-          mongo-node-show-databases
-          mongo-node-drop-database
-          mongo-node-create-collection
-          mongo-node-show-collections
-          mongo-node-drop-collection
           mongo-node-get-last-error
           mongo-node-reset-error
-          mongo-node-profiling-status
-          mongo-node-get-profiling-level
-          mongo-node-set-profiling-level
-          mongo-node-show-profiling
-          mongo-node-ensure-index
-          mongo-node-drop-index
-          mongo-node-drop-indexes
-          mongo-node-show-indexes
-          mongo-node-reindex
-          mongo-node-add-user
-          mongo-node-remove-user
           mongo-node-auth
           mongo-node-auth-by-table
           mongo-node-reauth
-          mongo-node-dbref-get
-          mongo-node-count
-          mongo-node-distinct
-          mongo-node-group
-          mongo-node-map-reduce
           <mongo-cursor>
+          mongo-cursor
           mongo-cursor?
+          mongo-cursor-node
+          mongo-cursor-query
+          mongo-cursor-reply
+          mongo-cursor-buffer
           mongo-cursor-locking
+          mongo-cursor-initial?
           mongo-cursor-exists?
+          mongo-cursor-rewind!
           mongo-cursor-more!
           mongo-cursor-next!
           mongo-cursor-peek!
           mongo-cursor-take!
           mongo-cursor-all!
-          mongo-cursor-kill))
+          mongo-cursor-kill
+          mongo-cursor->generator))
+
 (select-module mongo.node)
 
 ;;;; condition
@@ -122,12 +109,18 @@
   (mongo-node-locking node
     (socket-close (mongo-node-socket node))))
 
+(define (mongo-node-generate-id! node)
+  ((mongo-node-counter node)))
+
+(define (mongo-node-reset-id! node)
+  ((mongo-node-counter node) -1))
+
 (define (mongo-node-sync! node)
   (mongo-node-locking node
     (mongo-node-disconnect! node)
     (let1 socket (mongo-socket-connect (mongo-node-address node))
       (mongo-node-socket-set! node socket)
-      ((mongo-node-counter node) -1)
+      (mongo-node-reset-id! node)
       (mongo-node-reauth node))))
 
 (define (mongo-node-available! node)
@@ -137,9 +130,7 @@
 
 (define (mongo-node-request node message)
   (mongo-node-locking node
-    (guard (e [(<mongo-wire-error> e)
-               (mongo-node-disconnect! node)
-               (raise e)])
+    (guard (e [(<mongo-wire-error> e) (mongo-node-disconnect! node) (raise e)])
       (mongo-message-request (mongo-node-socket node) message))))
 
 (define (mongo-query-failure reply)
@@ -155,63 +146,35 @@
 (define (mongo-node-authed-delete! node dn user)
   (hash-table-delete! (mongo-node-authed node) (vector dn user)))
 
-;;;; CRUD
+;;;; basic
 
-(define (mongo-node-find1 node dn cn query :key (number-to-skip 0)
-                                                (return-field-selector #f)
-                                                (slave-ok #f))
-  (let1 message (mongo-message-query
-                 (mongo-ns-compose dn cn)
-                 query
-                 :request-id ((mongo-node-counter node))
-                 :number-to-skip number-to-skip
-                 :number-to-return 1
-                 :return-field-selector return-field-selector
-                 :slave-ok slave-ok)
-    (mongo-message-reply-document
-     (mongo-query-failure (mongo-node-request node message)))))
+(define (mongo-node-find1 node dn cn query . opts)
+  (mongo-message-reply-document
+   (mongo-query-failure
+    (mongo-node-request node (apply mongo-message-query
+                                    (mongo-ns-compose dn cn)
+                                    query
+                                    :request-id (mongo-node-generate-id! node)
+                                    :number-to-return 1
+                                    opts)))))
 
-(define (mongo-node-find node dn cn query :key (number-to-skip 0)
-                                               (number-to-return 0)
-                                               (return-field-selector #f)
-                                               (tailable-cursor #f)
-                                               (slave-ok #f)
-                                               (oplog-replay #f)
-                                               (no-cursor-timeout #f)
-                                               (await-data #f)
-                                               (exhaust #f)
-                                               (partial #f))
-  (let* ([message (mongo-message-query
-                   (mongo-ns-compose dn cn)
-                   query
-                   :request-id ((mongo-node-counter node))
-                   :number-to-skip number-to-skip
-                   :number-to-return number-to-return
-                   :return-field-selector return-field-selector
-                   :tailable-cursor tailable-cursor
-                   :slave-ok slave-ok
-                   :oplog-replay oplog-replay
-                   :no-cursor-timeout no-cursor-timeout
-                   :await-data await-data
-                   :exhaust exhaust
-                   :partial partial)]
-         [reply (mongo-query-failure (mongo-node-request node message))])
-    (make-mongo-cursor node
-                       message
-                       reply
-                       (mongo-message-reply-documents reply)
-                       (make-mutex))))
+(define (mongo-node-find node dn cn query . opts)
+  (mongo-cursor node (apply mongo-message-query
+                            (mongo-ns-compose dn cn)
+                            query
+                            :request-id (mongo-node-generate-id! node)
+                            opts)))
 
 (define (mongo-node-insert node dn cn docs :key (continue-on-error #f)
                                                 (safe #f)
-                                                fsync
-                                                j
-                                                w
-                                                wtimeout)
+                                                (fsync (undefined))
+                                                (j (undefined))
+                                                (w (undefined))
+                                                (wtimeout (undefined)))
   (let1 message (mongo-message-insert
                  (mongo-ns-compose dn cn)
                  docs
-                 :request-id ((mongo-node-counter node))
+                 :request-id (mongo-node-generate-id! node)
                  :continue-on-error continue-on-error)
     (mongo-node-locking node
       (mongo-node-request node message)
@@ -221,20 +184,21 @@
                                    :fsync fsync
                                    :j j
                                    :w w
-                                   :wtimeout wtimeout)))))
+                                   :wtimeout wtimeout
+                                   :thrown #t)))))
 
 (define (mongo-node-update node dn cn select update :key (upsert #f)
                                                          (multi-update #f)
                                                          (safe #f)
-                                                         fsync
-                                                         j
-                                                         w
-                                                         wtimeout)
+                                                         (fsync (undefined))
+                                                         (j (undefined))
+                                                         (w (undefined))
+                                                         (wtimeout (undefined)))
   (let1 message (mongo-message-update
                  (mongo-ns-compose dn cn)
                  select
                  update
-                 :request-id ((mongo-node-counter node))
+                 :request-id (mongo-node-generate-id! node)
                  :upsert upsert
                  :multi-update multi-update)
     (mongo-node-locking node
@@ -245,18 +209,19 @@
                                    :fsync fsync
                                    :j j
                                    :w w
-                                   :wtimeout wtimeout)))))
+                                   :wtimeout wtimeout
+                                   :thrown #t)))))
 
 (define (mongo-node-delete node dn cn select :key (single-remove #f)
                                                   (safe #f)
-                                                  fsync
-                                                  j
-                                                  w
-                                                  wtimeout)
+                                                  (fsync (undefined))
+                                                  (j (undefined))
+                                                  (w (undefined))
+                                                  (wtimeout (undefined)))
   (let1 message (mongo-message-delete
                  (mongo-ns-compose dn cn)
                  select
-                 :request-id ((mongo-node-counter node))
+                 :request-id (mongo-node-generate-id! node)
                  :single-remove single-remove)
     (mongo-node-locking node
       (mongo-node-request node message)
@@ -266,60 +231,29 @@
                                    :fsync fsync
                                    :j j
                                    :w w
-                                   :wtimeout wtimeout)))))
-
-;;;; helper
+                                   :wtimeout wtimeout
+                                   :thrown #t)))))
 
 (define (mongo-node-command node dn query)
   (rlet1 doc (mongo-node-find1 node dn "$cmd" query)
-    (when (zero? (assoc-ref doc "ok"))
+    (unless (mongo-ok? doc)
       (error <mongo-request-error> :reason doc (assoc-ref doc "errmsg")))))
 
 (define (mongo-node-admin node query)
   (mongo-node-command node "admin" query))
 
-(define (mongo-node-ping node)
-  (mongo-node-admin node '(("ping" . 1))))
-
-(define (mongo-node-round-trip node :optional (count 1))
-  (let1 tr (time-this count (^[] (mongo-node-ping node)))
+(define (mongo-node-round-trip node)
+  (let1 tr (time-this 1 (^[] (mongo-node-admin node '(("ping" . 1)))))
     (- (~ tr'real) (~ tr'user) (~ tr'sys))))
 
 (define (mongo-node-ismaster node)
   (mongo-node-admin node '(("ismaster" . 1))))
 
-(define (mongo-node-server-status node)
-  (mongo-node-admin node '(("serverStatus" . 1))))
-
-(define (mongo-node-replset-status node)
-  (mongo-node-admin node '(("replSetGetStatus" . 1))))
-
-(define (mongo-node-show-databases node)
-  (mongo-node-admin node '(("listDatabases" . 1))))
-
-(define (mongo-node-drop-database node dn)
-  (mongo-node-command node dn '(("dropDatabase" . 1))))
-
-(define (mongo-node-create-collection node dn cn :key capped
-                                                      size
-                                                      max)
-  (mongo-node-command node
-                      dn
-                      `(("create" . ,cn)
-                        ,@(bson-part "capped" capped)
-                        ,@(bson-part "size" size)
-                        ,@(bson-part "max" max))))
-
-(define (mongo-node-show-collections node dn)
-  (mongo-cursor-all! (mongo-node-find node dn "system.namespaces" '())))
-
-(define (mongo-node-drop-collection node dn cn)
-  (mongo-node-command node dn `(("drop" . ,cn))))
-
-(define (mongo-node-get-last-error node dn :key fsync
-                                                j
-                                                w
-                                                wtimeout)
+(define (mongo-node-get-last-error node dn :key (fsync (undefined))
+                                                (j (undefined))
+                                                (w (undefined))
+                                                (wtimeout (undefined))
+                                                (thrown #f))
   (rlet1 doc (mongo-node-command
               node
               dn
@@ -328,113 +262,17 @@
                 ,@(bson-part "j" j)
                 ,@(bson-part "w" w)
                 ,@(bson-part "wtimeout" wtimeout)))
-    (if-let1 err (assoc-ref doc "err")
-      (when (not (eq? 'null err))
-        (error <mongo-request-error> :reason doc err)))))
+    (when thrown
+      (if-let1 err (assoc-ref doc "err")
+        (when (not (eq? 'null err))
+          (error <mongo-request-error> :reason doc err))))))
 
 (define (mongo-node-reset-error node dn)
-  (mongo-node-command node dn '(("reseterror" . 1))))
-
-;;;; index
-
-(define (mongo-node-ensure-index node dn cn spec :key (name #f)
-                                                      unique
-                                                      drop-dups
-                                                      background
-                                                      sparse
-                                                      (safe #f)
-                                                      fsync
-                                                      j
-                                                      w
-                                                      wtimeout)
-  (mongo-node-insert node
-                     dn
-                     "system.indexes"
-                     `((("ns" . ,(mongo-ns-compose dn cn))
-                        ("key" . ,spec)
-                        ("name" . ,(or name (mongo-generate-index-name spec)))
-                        ,@(bson-part "unique" unique)
-                        ,@(bson-part "dropDups" drop-dups)
-                        ,@(bson-part "background" background)
-                        ,@(bson-part "sparse" sparse)))
-                     :safe safe
-                     :fsync fsync
-                     :j j
-                     :w w
-                     :wtimeout wtimeout))
-
-(define (mongo-node-show-indexes node dn cn)
-  (mongo-cursor-all!
-   (mongo-node-find node
-                    dn
-                    "system.indexes"
-                    `(("ns" . ,(mongo-ns-compose dn cn))))))
-
-(define (mongo-node-drop-index node dn cn pattern)
-  (mongo-node-command node dn `(("dropIndexes" . ,cn) ("index" . ,pattern))))
-
-(define (mongo-node-drop-indexes node dn cn)
-  (mongo-node-command node dn `(("dropIndexes" . ,cn) ("index" . "*"))))
-
-(define (mongo-node-reindex node dn cn)
-  (mongo-node-command node dn `(("reIndex" . ,cn))))
-
-;;;; profiling
-
-(define (mongo-node-profiling-status node dn)
-  (mongo-node-command node dn '(("profile" . -1))))
-
-(define (mongo-node-get-profiling-level node dn)
-  (assoc-ref (mongo-node-profiling-status node dn) "was"))
-
-(define (mongo-node-set-profiling-level node dn level :key slowms)
-  (mongo-node-command node
-                      dn
-                      `(("profile" . ,level)
-                        ,@(bson-part "slowms" slowms))))
-
-(define (mongo-node-show-profiling node dn)
-  (mongo-cursor-all! (mongo-node-find node dn "system.profile" '())))
-
-;;;; auth
-
-(define (mongo-node-add-user node dn user pass :key read-only
-                                                    (safe #f)
-                                                    fsync
-                                                    j
-                                                    w
-                                                    wtimeout)
-  (mongo-node-update node
-                     dn
-                     "system.users"
-                     `(("user" . ,user))
-                     `(("$set" . (("pwd" . ,(mongo-user-digest-hexify user
-                                                                      pass))
-                                  ,@(bson-part "readOnly" read-only))))
-                     :upsert #t
-                     :safe safe
-                     :fsync fsync
-                     :j j
-                     :w w
-                     :wtimeout wtimeout))
-
-(define (mongo-node-remove-user node dn user :key (safe #f)
-                                                  fsync
-                                                  j
-                                                  w
-                                                  wtimeout)
-  (mongo-node-delete node
-                     dn
-                     "system.users"
-                     `(("user" . ,user))
-                     :safe safe
-                     :fsync fsync
-                     :j j
-                     :w w
-                     :wtimeout wtimeout))
+  (mongo-node-command node dn '(("resetError" . 1))))
 
 (define (mongo-node-auth node dn user pass)
-  (let1 nonce (alref (mongo-node-command node dn '(("getnonce" . 1))) "nonce")
+  (let1 nonce (assoc-ref (mongo-node-command node dn '(("getnonce" . 1)))
+                         "nonce")
     (begin0 (mongo-node-command
              node
              dn
@@ -461,76 +299,7 @@
                             pass)))))))
 
 (define (mongo-node-reauth node)
-  (mongo-node-auth-by-table node
-                            (mongo-node-authed node)
-                            :error #f
-                            :delete #t
-                            :ignore #f))
-
-;;;; dbref
-
-(define (mongo-node-dbref-get node dn ref :key (slave-ok #f))
-  (mongo-node-find1 node
-                    (or (assoc-ref ref "$db") dn)
-                    (assoc-ref ref "$ref")
-                    `(("_id" . ,(assoc-ref ref "$id")))
-                    :slave-ok slave-ok))
-
-;;;; aggregation
-
-(define (mongo-node-count node dn cn :key query fields limit skip)
-  (mongo-node-command node
-                      dn
-                      `(("count" . ,cn)
-                        ,@(bson-part "query" query)
-                        ,@(bson-part "fields" fields)
-                        ,@(bson-part "limit" limit)
-                        ,@(bson-part "skip" skip))))
-
-(define (mongo-node-distinct node dn cn key :key query)
-  (mongo-node-command node
-                      dn
-                      `(("distinct" . ,cn)
-                        ("key" . ,key)
-                        ,@(bson-part "query" query))))
-
-(define (mongo-node-group node dn cn key reduce initial :key keyf
-                                                             cond
-                                                             finalize)
-  (mongo-node-command
-   node
-   dn
-   `(("group" . (("ns"      . ,cn)
-                 ("key"     . ,key)
-                 ("$reduce"  . ,reduce)
-                 ("initial" . ,initial)
-                 ,@(bson-part "keyf" keyf)
-                 ,@(bson-part "cond" cond)
-                 ,@(bson-part "finalize" finalize))))))
-
-(define (mongo-node-map-reduce node dn cn map reduce :key query
-                                                          sort
-                                                          limit
-                                                          out
-                                                          keeptemp
-                                                          finalize
-                                                          scope
-                                                          js-mode
-                                                          verbose)
-  (mongo-node-command node
-                      dn
-                      `(("mapreduce" . ,cn)
-                        ("map" . ,map)
-                        ("reduce" . ,reduce)
-                        ,@(bson-part "query" query)
-                        ,@(bson-part "sort" sort)
-                        ,@(bson-part "limit" limit)
-                        ,@(bson-part "out" out)
-                        ,@(bson-part "keeptemp" keeptemp)
-                        ,@(bson-part "finalize" finalize)
-                        ,@(bson-part "scope" scope)
-                        ,@(bson-part "jsMode" js-mode)
-                        ,@(bson-part "verbose" verbose))))
+  (mongo-node-auth-by-table node (mongo-node-authed node)))
 
 ;;;; cursor
 
@@ -547,31 +316,58 @@
      (with-locking-mutex-recursively (mongo-cursor-mutex cursor)
        (^[] body ...))]))
 
+(define (mongo-cursor node query)
+  (make-mongo-cursor node query #f '() (make-mutex)))
+
+(define (mongo-cursor-initial? cursor)
+  (mongo-cursor-locking cursor
+    (and (not (mongo-cursor-reply cursor))
+         (null? (mongo-cursor-buffer cursor)))))
+
 (define (mongo-cursor-exists? cursor)
   (mongo-cursor-locking cursor
-    (let1 reply (mongo-cursor-reply cursor)
-      (not (or (= (mongo-message-reply-cursor-id reply) 0)
-               (mongo-message-reply-cursor-not-found? reply))))))
+    (and-let* ([reply (mongo-cursor-reply cursor)])
+      (and (not (= (mongo-message-reply-cursor-id reply) 0))
+           (not (mongo-message-reply-cursor-not-found? reply))))))
+
+(define (mongo-cursor-rewind! cursor)
+  (mongo-cursor-locking cursor
+    (and (not (mongo-cursor-initial? cursor))
+         (begin (mongo-cursor-kill cursor)
+                (mongo-message-request-id-set!
+                 (mongo-cursor-query cursor)
+                 (mongo-node-generate-id! (mongo-cursor-node cursor)))
+                (mongo-cursor-reply-set! cursor #f)
+                (mongo-cursor-buffer-set! cursor '())
+                #t))))
 
 (define (mongo-cursor-more! cursor)
   (mongo-cursor-locking cursor
-    (and (mongo-cursor-exists? cursor)
-         (let* ([node  (mongo-cursor-node cursor)]
-                [reply (mongo-cursor-reply cursor)]
-                [query (mongo-cursor-query cursor)]
-                [ms (mongo-message-getmore
-                     (mongo-message-query-full-collection-name query)
-                     (mongo-message-reply-cursor-id reply)
-                     :request-id ((mongo-node-counter node))
-                     :number-to-return (mongo-message-query-number-to-return
-                                        query))]
-                [rep (mongo-query-failure (mongo-node-request node ms))]
-                [docs (mongo-message-reply-documents rep)])
-           (mongo-cursor-reply-set! cursor rep)
-           (and (not (null? docs))
-                (begin (mongo-cursor-buffer-set!
-                        cursor (append (mongo-cursor-buffer cursor) docs))
-                       #t))))))
+    (if-let1 reply (mongo-cursor-reply cursor)
+      (and (not (= 0 (mongo-message-reply-cursor-id reply)))
+           (not (mongo-message-reply-cursor-not-found? reply))
+           (let* ([node  (mongo-cursor-node cursor)]
+                  [query (mongo-cursor-query cursor)]
+                  [ms (mongo-message-getmore
+                       (mongo-message-query-full-collection-name query)
+                       (mongo-message-reply-cursor-id reply)
+                       :request-id (mongo-node-generate-id! node)
+                       :number-to-return (mongo-message-query-number-to-return
+                                          query))]
+                  [rep  (mongo-query-failure (mongo-node-request node ms))]
+                  [docs (mongo-message-reply-documents rep)])
+             (mongo-cursor-reply-set! cursor rep)
+             (and (not (null? docs))
+                  (begin (mongo-cursor-buffer-set!
+                          cursor
+                          (append (mongo-cursor-buffer cursor) docs))
+                         #t))))
+      (let1 rep (mongo-query-failure
+                 (mongo-node-request (mongo-cursor-node cursor)
+                                     (mongo-cursor-query cursor)))
+        (mongo-cursor-reply-set! cursor rep)
+        (mongo-cursor-buffer-set! cursor (mongo-message-reply-documents rep))
+        #t))))
 
 (define (mongo-cursor-next! cursor)
   (mongo-cursor-locking cursor
@@ -610,7 +406,8 @@
   (hash-table-for-each
    (rlet1 ht (make-hash-table 'eq?)
      (for-each (^[cursor]
-                 (when (mongo-cursor-exists? cursor)
+                 (when (and (not (mongo-cursor-initial? cursor))
+                            (mongo-cursor-exists? cursor))
                    (hash-table-push! ht
                                      (mongo-cursor-node cursor)
                                      (mongo-message-reply-cursor-id
@@ -620,4 +417,12 @@
      (mongo-node-request node
                          (mongo-message-kill-cursors
                           ids
-                          :request-id ((mongo-node-counter node)))))))
+                          :request-id (mongo-node-generate-id! node))))))
+
+(define (mongo-cursor->generator cursor)
+  (generate
+   (^[yield]
+     (let loop ()
+       (if-let1 doc (mongo-cursor-next! cursor)
+         (begin (yield doc) (loop))
+         (eof-object))))))

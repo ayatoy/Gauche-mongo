@@ -1,21 +1,21 @@
 (use gauche.test)
 (use gauche.threads)
-(use srfi-1)
 (use mongo.util)
 (use mongo.bson)
 (use mongo.wire)
 (use mongo.node)
 (use mongo.core)
 
-(define *dn* "gauche_mongo_test_database")
-(define *db* (mongo-database (mongo "localhost") *dn*))
-(define *fn* "gauche_mongo_test_file")
+;;;; prep
+
+(define *dn*   "gauche_mongo_test_database")
+(define *db*   (mongo-database (mongo "localhost") *dn*))
+(define *fn*   "gauche_mongo_test_file")
 (define *grid* #f)
 
-(define (thread-map proc xs)
+(define (mt-map proc xs)
   (map thread-join!
-       (map (^[x] (thread-start! (make-thread (^[] (proc x)))))
-            xs)))
+       (map (^[x] (thread-start! (make-thread (^[] (proc x))))) xs)))
 
 (define (input-to-string in)
   (call-with-output-string
@@ -106,7 +106,7 @@
        (call-with-mongo-grid-input-port *grid* "empty" input-to-string))
 
 (test* "call-with-mongo-grid-output-port" #t
-       (begin (thread-map (^[i] (call-with-mongo-grid-output-port
+       (begin (mt-map (^[i] (call-with-mongo-grid-output-port
                                  *grid*
                                  *fn*
                                  (^[out] (format out "foobarbaz"))
@@ -116,7 +116,7 @@
 
 (test* "call-with-mongo-grid-input-port" #t
        (every (^[str] (= 9 (string-length str)))
-              (thread-map (^[i] (call-with-mongo-grid-input-port
+              (mt-map (^[i] (call-with-mongo-grid-input-port
                                  *grid*
                                  *fn*
                                  input-to-string
@@ -130,7 +130,7 @@
        (begin (call-with-mongo-grid-output-port
                *grid*
                *fn*
-               (^[out] (thread-map (^[i] (format out "foo")) (iota 50)))
+               (^[out] (mt-map (^[i] (format out "foo")) (iota 50)))
                :chunk-size 3
                :retain #f)
               #t))

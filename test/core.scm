@@ -2,36 +2,32 @@
 (use gauche.threads)
 (use gauche.uvector)
 (use binary.io)
-(use srfi-1)
 (use mongo.util)
 (use mongo.bson)
 (use mongo.wire)
 (use mongo.node)
 
-(define (thread-map proc xs)
+;;;; prep
+
+(define *hosts*  '("localhost"))
+(define *hosts1* '("localhost:27018" "localhost:27019" "localhost:27020"))
+(define *hosts2* '("localhost:27021" "localhost:27022" "localhost:27023"))
+(define *rs*     "gauche_mongo_test_replica_set")
+(define *dn*     "gauche_mongo_test_database")
+(define *cn*     "gauche_mongo_test_collection")
+(define *index*  "gauche_mongo_test_index")
+(define *user*   "gauche_mongo_test_user")
+(define *pass*   "gauche_mongo_test_pass")
+(define *s*      #f)
+(define *s-db*   #f)
+(define *s-col*  #f)
+(define *r*      #f)
+(define *r-db*   #f)
+(define *r-col*  #f)
+
+(define (mt-map proc xs)
   (map thread-join!
-       (map (^[x] (thread-start! (make-thread (^[] (proc x)))))
-            xs)))
-
-(define (ok? doc)
-  (not (zero? (alref doc "ok"))))
-
-(define *hosts* '("localhost:27017"
-                  "localhost:27018"
-                  "localhost:27019"
-                  "localhost:27020"))
-(define *rn* "gauche_mongo_test_replica_set")
-(define *dn* "gauche_mongo_test_database")
-(define *cn* "gauche_mongo_test_collection")
-(define *in* "gauche_mongo_test_index")
-(define *user* "gauche_mongo_test_user")
-(define *pass* "gauche_mongo_test_pass")
-(define *single* #f)
-(define *single-db* #f)
-(define *single-col* #f)
-(define *rs* #f)
-(define *rs-db* #f)
-(define *rs-col* #f)
+       (map (^[x] (thread-start! (make-thread (^[] (proc x))))) xs)))
 
 ;;;; test
 
@@ -44,211 +40,237 @@
 
 (test-section "single")
 
-(test* "mongo" #t
-       (begin (set! *single* (mongo "localhost:27017")) #t))
+(test* "mongo" <mongo>
+       (begin (set! *s* (mongo "localhost:27017"))
+              (class-of *s*)))
 
 (test* "mongo?" #t
-       (mongo? *single*))
+       (mongo? *s*))
 
 (test* "mongo-master" #t
-       (mongo-node? (mongo-master *single*)))
+       (mongo-node? (mongo-master *s*)))
 
 (test* "mongo-slave" #f
-       (mongo-slave *single*))
+       (mongo-slave *s*))
 
 (test* "mongo-hosts" #t
-       (every mongo-address-inet? (mongo-hosts *single*)))
+       (every mongo-address-inet? (mongo-hosts *s*)))
 
 (test* "mongo-name" #f
-       (mongo-name *single*))
+       (mongo-name *s*))
 
 (test* "mongo-timeout" 5000
-       (mongo-timeout *single*))
+       (mongo-timeout *s*))
 
 (test* "mongo-timeout-set!" 10000
-       (begin (mongo-timeout-set! *single* 10000)
-              (mongo-timeout *single*)))
+       (begin (mongo-timeout-set! *s* 10000)
+              (mongo-timeout *s*)))
 
 (test* "mongo-locking" 10100
-       (begin (thread-map
-               (^[i] (mongo-locking *single*
-                       (mongo-timeout-set! *single*
-                                           (+ (mongo-timeout *single*) 1))))
+       (begin (mt-map
+               (^[i] (mongo-locking *s*
+                       (mongo-timeout-set! *s*
+                                           (+ (mongo-timeout *s*) 1))))
                (iota 100))
-              (mongo-timeout *single*)))
+              (mongo-timeout *s*)))
+
+(test* "mongo-single?" #t
+       (mongo-single? *s*))
 
 (test* "mongo-replica-set?" #f
-       (mongo-replica-set? *single*))
+       (mongo-replica-set? *s*))
 
 (test* "mongo-connect?" #t
-       (mongo-connect? *single*))
+       (mongo-connect? *s*))
 
 (test* "mongo-disconnect!" #t
-       (and (mongo-connect? *single*)
-            (begin (mongo-disconnect! *single*) #t)
-            (not (mongo-connect? *single*))))
+       (begin (mongo-disconnect! *s*) #t))
+
+(test* "mongo-connect?" #f
+       (mongo-connect? *s*))
 
 (test* "mongo-sync!" #t
-       (and (not (mongo-connect? *single*))
-            (begin (mongo-sync! *single*) #t)
-            (mongo-connect? *single*)))
+       (begin (mongo-sync! *s*) #t))
+
+(test* "mongo-connect?" #t
+       (mongo-connect? *s*))
+
+(test* "mongo-disconnect!" #t
+       (begin (mongo-disconnect! *s*) #t))
+
+(test* "mongo-connect?" #f
+       (mongo-connect? *s*))
 
 (test* "mongo-available!" #t
-       (and (begin (mongo-disconnect! *single*) #t)
-            (not (mongo-connect? *single*))
-            (begin (mongo-available! *single*) #t)
-            (mongo-connect? *single*)))
+       (begin (mongo-available! *s*) #t))
+
+(test* "mongo-connect?" #t
+       (mongo-connect? *s*))
 
 (test* "mongo-ref" #t
-       (eq? (mongo-ref *single* :slave #f)
-            (mongo-ref *single* :slave #t)))
+       (eq? (mongo-ref *s* :slave #f)
+            (mongo-ref *s* :slave #t)))
 
 (test* "mongo-admin" #t
-       (ok? (mongo-admin *single* (% "ping" 1))))
+       (mongo-ok? (mongo-admin *s* '(("ping" . 1)))))
 
 (test* "mongo-ping" #t
-       (ok? (mongo-ping *single*)))
+       (mongo-ok? (mongo-ping *s*)))
 
 (test* "mongo-ismaster" #t
-       (ok? (mongo-ismaster *single*)))
+       (mongo-ok? (mongo-ismaster *s*)))
 
 (test* "mongo-server-status" #t
-       (ok? (mongo-server-status *single*)))
+       (mongo-ok? (mongo-server-status *s*)))
 
 (test* "mongo-replset-status" (test-error <mongo-request-error>)
-       (mongo-replset-status *single*))
+       (mongo-ok? (mongo-replset-status *s*)))
 
 (test* "mongo-show-databases" #t
-       (ok? (mongo-show-databases *single*)))
+       (mongo-ok? (mongo-show-databases *s*)))
 
-(test* "mongo-database" #t
-       (begin (set! *single-db* (mongo-database *single* *dn*)) #t))
+(test* "mongo-database" <mongo-database>
+       (begin (set! *s-db* (mongo-database *s* *dn*))
+              (class-of *s-db*)))
 
 (test* "mongo-database validation" (test-error <mongo-validation-error>)
-       (mongo-database *single* "$foo"))
+       (mongo-database *s* "$foo"))
 
 (test* "mongo-database?" #t
-       (mongo-database? *single-db*))
+       (mongo-database? *s-db*))
 
 (test* "mongo-database-server" #t
-       (mongo? (mongo-database-server *single-db*)))
+       (mongo? (mongo-database-server *s-db*)))
 
 (test* "mongo-database-name" *dn*
-       (mongo-database-name *single-db*))
+       (mongo-database-name *s-db*))
 
 (test* "mongo-command" #t
-       (ok? (mongo-command *single-db* (% "ping" 1))))
+       (mongo-ok? (mongo-command *s-db* '(("ping" . 1)))))
 
 (test* "mongo-drop-database" #t
-       (ok? (mongo-drop-database *single-db*)))
+       (mongo-ok? (mongo-drop-database *s-db*)))
 
 (test* "mongo-get-last-error" #t
-       (ok? (mongo-get-last-error *single-db*)))
+       (mongo-ok? (mongo-get-last-error *s-db*)))
 
 (test* "mongo-reset-error" #t
-       (ok? (mongo-reset-error *single-db*)))
+       (mongo-ok? (mongo-reset-error *s-db*)))
 
 (test* "mongo-show-collections" #t
-       (list? (mongo-show-collections *single-db*)))
+       (every bson-document? (mongo-show-collections *s-db*)))
 
 (test* "mongo-profiling-status" #t
-       (ok? (mongo-profiling-status *single-db*)))
+       (mongo-ok? (mongo-profiling-status *s-db*)))
 
 (test* "mongo-get-profiling-level" #t
-       (number? (mongo-get-profiling-level *single-db*)))
+       (number? (mongo-get-profiling-level *s-db*)))
 
 (test* "mongo-set-profiling-level" #t
-       (ok? (mongo-set-profiling-level *single-db* 1)))
+       (mongo-ok? (mongo-set-profiling-level *s-db* 1)))
 
 (test* "mongo-show-profiling" #t
-       (list? (mongo-show-profiling *single-db*)))
+       (every bson-document? (mongo-show-profiling *s-db*)))
 
 (test* "mongo-auth" (test-error <mongo-request-error>)
-       (mongo-auth *single-db* *user* *pass*))
+       (mongo-auth *s-db* *user* *pass*))
 
 (test* "mongo-add-user" #t
-       (ok? (mongo-add-user *single-db* *user* *pass* :safe #t)))
+       (mongo-ok? (mongo-add-user *s-db* *user* *pass* :safe #t)))
 
 (test* "mongo-remove-user" #t
-       (ok? (mongo-remove-user *single-db* *user* :safe #t)))
+       (mongo-ok? (mongo-remove-user *s-db* *user* :safe #t)))
 
-(test* "mongo-collection" #t
-       (begin (set! *single-col* (mongo-collection *single-db* *cn*)) #t))
+(test* "mongo-collection" <mongo-collection>
+       (begin (set! *s-col* (mongo-collection *s-db* *cn*))
+              (class-of *s-col*)))
 
 (test* "mongo-collection validation" (test-error <mongo-validation-error>)
-       (mongo-collection *single-db* "$foo"))
+       (mongo-collection *s-db* "$foo"))
 
 (test* "mongo-collection-database" #t
-       (mongo-database? (mongo-collection-database *single-col*)))
+       (mongo-database? (mongo-collection-database *s-col*)))
 
 (test* "mongo-collection-name" *cn*
-       (mongo-collection-name *single-col*))
+       (mongo-collection-name *s-col*))
 
 (test* "mongo-create-collection" #t
-       (ok? (mongo-create-collection *single-col*)))
+       (mongo-ok? (mongo-create-collection *s-col*)))
 
 (test* "mongo-drop-collection" #t
-       (ok? (mongo-drop-collection *single-col*)))
+       (mongo-ok? (mongo-drop-collection *s-col*)))
 
 (test* "mongo-insert1" #t
-       (ok? (mongo-insert1 *single-col*
-                           (% "x" "foo")
-                           :safe #t)))
+       (mongo-ok? (mongo-insert1 *s-col* '(("x" . "foo")) :safe #t)))
 
 (test* "mongo-insert" #t
-       (ok? (mongo-insert *single-col*
-                          (list (% "x" "bar") (% "x" "baz"))
-                          :safe #t)))
+       (mongo-ok? (mongo-insert *s-col*
+                                '((("x" . "bar")) (("x" . "baz")))
+                                :safe #t)))
 
 (test* "mongo-find1" "foo"
-       (alref (mongo-find1 *single-col* (% "x" "foo")) "x"))
+       (assoc-ref (mongo-find1 *s-col* '(("x" . "foo")))
+                  "x"))
 
 (test* "mongo-find" #t
-       (mongo-cursor? (mongo-find *single-col* '())))
+       (every bson-document?
+              (mongo-find *s-col* '(("x" . (("$exists" . true)))))))
+
+(test* "mongo-find" #t
+       (mongo-cursor? (mongo-find *s-col* '(("x" . (("$exists" . true))))
+                                  :cursor #t)))
+
+(test* "mongo-find" #t
+       (every bson-document?
+              (mongo-cursor-all!
+               (mongo-find *s-col* '(("x" . (("$exists" . true))))
+                           :cursor #t))))
 
 (test* "mongo-update" #t
-       (ok? (mongo-update *single-col*
-                          (% "x" "FOO")
-                          (% "$set" (% "x" "Foo"))
-                          :safe #t)))
+       (mongo-ok? (mongo-update *s-col*
+                                '(("x" . "FOO"))
+                                '(("$set" . (("x" . "Foo"))))
+                                :safe #t)))
 
 (test* "mongo-delete" #t
-       (ok? (mongo-delete *single-col*
-                          (% "x" (% "$exists" 'true))
-                          :safe #t)))
+       (mongo-ok? (mongo-delete *s-col*
+                                '(("x" . (("$exists" . true))))
+                                :safe #t)))
 
 (test* "mongo-ensure-index" #t
-       (ok? (mongo-ensure-index *single-col* (% "x" 1) :name *in* :safe #t)))
+       (mongo-ok?
+        (mongo-ensure-index *s-col* '(("x" . 1)) :name *index* :safe #t)))
 
 (test* "mongo-show-indexes" #t
-       (list? (mongo-show-indexes *single-col*)))
+       (every bson-document? (mongo-show-indexes *s-col*)))
 
 (test* "mongo-drop-index" #t
-       (ok? (mongo-drop-index *single-col* *in*)))
+       (mongo-ok? (mongo-drop-index *s-col* *index*)))
 
 (test* "mongo-drop-indexes" #t
-       (ok? (mongo-drop-indexes *single-col*)))
+       (mongo-ok? (mongo-drop-indexes *s-col*)))
 
 (test* "mongo-reindex" #t
-       (ok? (mongo-reindex *single-col*)))
+       (mongo-ok? (mongo-reindex *s-col*)))
 
 (test* "mongo-count" #t
-       (number? (mongo-count *single-col*)))
+       (number? (mongo-count *s-col*)))
 
 (test* "mongo-distinct" #t
-       (vector? (mongo-distinct *single-col* "x")))
+       (vector? (mongo-distinct *s-col* "x")))
 
 (test* "mongo-group" #t
-       (vector? (mongo-group *single-col*
+       (vector? (mongo-group *s-col*
                              '()
                              (bson-code "function(doc,acc){acc.cnt++;}")
                              '(("cnt" . 0)))))
 
 (test* "mongo-map-reduce" #t
-       (ok? (mongo-map-reduce *single-col*
-                              (bson-code "function() { emit(this.i, 1); }")
-                              (bson-code "function(k, vals) { return 1; }")
-                              :out (% "inline" 1))))
+       (mongo-ok?
+        (mongo-map-reduce *s-col*
+                          (bson-code "function() { emit(this.i, 1); }")
+                          (bson-code "function(k, vals) { return 1; }")
+                          :out '(("inline" . 1)))))
 
 (test* "mongo-dbref? 1" #t
        (mongo-dbref? '(("$ref" . "foo") ("$id" . "bar"))))
@@ -263,211 +285,243 @@
        (mongo-dbref "foo" "bar" "baz"))
 
 (test* "mongo-dbref-get" #f
-       (mongo-dbref-get *single-db* (mongo-dbref "foo" "bar" "baz")))
+       (mongo-dbref-get *s-db* (mongo-dbref "foo" "bar" "baz")))
 
 ;;;; replica-set
 
 (test-section "replica-set")
 
-(test* "mongo" #t
-       (begin (set! *rs* (mongo "localhost:27018,localhost:27019,localhost:27010/?replicaset=gauche_mongo_test_replica_set")) #t))
+(test* "mongo" <mongo>
+       (begin (set! *r* (mongo "localhost:27018,localhost:27019,localhost:27010/?replicaset=gauche_mongo_test_replica_set"))
+              (class-of *r*)))
 
 (test* "mongo?" #t
-       (mongo? *rs*))
+       (mongo? *r*))
 
 (test* "mongo-master" #t
-       (mongo-node? (mongo-master *rs*)))
+       (mongo-node? (mongo-master *r*)))
 
 (test* "mongo-slave" #t
-       (mongo-node? (mongo-slave *rs*)))
+       (mongo-node? (mongo-slave *r*)))
 
 (test* "mongo-hosts" #t
-       (every mongo-address-inet? (mongo-hosts *rs*)))
+       (every mongo-address-inet? (mongo-hosts *r*)))
 
-(test* "mongo-name" *rn*
-       (mongo-name *rs*))
+(test* "mongo-name" *rs*
+       (mongo-name *r*))
 
 (test* "mongo-timeout" 5000
-       (mongo-timeout *rs*))
+       (mongo-timeout *r*))
 
 (test* "mongo-timeout-set!" 10000
-       (begin (mongo-timeout-set! *rs* 10000)
-              (mongo-timeout *rs*)))
+       (begin (mongo-timeout-set! *r* 10000)
+              (mongo-timeout *r*)))
 
 (test* "mongo-locking" 10100
-       (begin (thread-map
-               (^[i] (mongo-locking *rs*
-                       (mongo-timeout-set! *rs*
-                                           (+ (mongo-timeout *rs*) 1))))
+       (begin (mt-map
+               (^[i] (mongo-locking *r*
+                       (mongo-timeout-set! *r*
+                                           (+ (mongo-timeout *r*) 1))))
                (iota 100))
-              (mongo-timeout *rs*)))
+              (mongo-timeout *r*)))
+
+(test* "mongo-single?" #f
+       (mongo-single? *r*))
 
 (test* "mongo-replica-set?" #t
-       (mongo-replica-set? *rs*))
+       (mongo-replica-set? *r*))
 
 (test* "mongo-connect?" #t
-       (mongo-connect? *rs*))
+       (mongo-connect? *r*))
 
 (test* "mongo-disconnect!" #t
-       (and (mongo-connect? *rs*)
-            (begin (mongo-disconnect! *rs*) #t)
-            (not (mongo-connect? *rs*))))
+       (begin (mongo-disconnect! *r*) #t))
+
+(test* "mongo-connect?" #f
+       (mongo-connect? *r*))
 
 (test* "mongo-sync!" #t
-       (and (not (mongo-connect? *rs*))
-            (begin (mongo-sync! *rs*) #t)
-            (mongo-connect? *rs*)))
+       (begin (mongo-sync! *r*) #t))
+
+(test* "mongo-connect?" #t
+       (mongo-connect? *r*))
+
+(test* "mongo-disconnect!" #t
+       (begin (mongo-disconnect! *r*) #t))
+
+(test* "mongo-connect?" #f
+       (mongo-connect? *r*))
 
 (test* "mongo-available!" #t
-       (and (begin (mongo-disconnect! *rs*) #t)
-            (not (mongo-connect? *rs*))
-            (begin (mongo-available! *rs*) #t)
-            (mongo-connect? *rs*)))
+       (begin (mongo-available! *r*) #t))
+
+(test* "mongo-connect?" #t
+       (mongo-connect? *r*))
 
 (test* "mongo-ref" #f
-       (eq? (mongo-ref *rs* :slave #f)
-            (mongo-ref *rs* :slave #t)))
+       (eq? (mongo-ref *r* :slave #f)
+            (mongo-ref *r* :slave #t)))
 
 (test* "mongo-admin" #t
-       (ok? (mongo-admin *rs* (% "ping" 1))))
+       (mongo-ok? (mongo-admin *r* '(("ping" . 1)))))
 
 (test* "mongo-ping" #t
-       (ok? (mongo-ping *rs*)))
+       (mongo-ok? (mongo-ping *r*)))
 
 (test* "mongo-ismaster" #t
-       (ok? (mongo-ismaster *rs*)))
+       (mongo-ok? (mongo-ismaster *r*)))
 
 (test* "mongo-server-status" #t
-       (ok? (mongo-server-status *rs*)))
+       (mongo-ok? (mongo-server-status *r*)))
 
 (test* "mongo-replset-status" #t
-       (ok? (mongo-replset-status *rs*)))
+       (mongo-ok? (mongo-replset-status *r*)))
 
 (test* "mongo-show-databases" #t
-       (ok? (mongo-show-databases *rs*)))
+       (mongo-ok? (mongo-show-databases *r*)))
 
-(test* "mongo-database" #t
-       (begin (set! *rs-db* (mongo-database *rs* *dn*)) #t))
+(test* "mongo-database" <mongo-database>
+       (begin (set! *r-db* (mongo-database *r* *dn*))
+              (class-of *r-db*)))
+
+(test* "mongo-database validation" (test-error <mongo-validation-error>)
+       (mongo-database *r* "$foo"))
 
 (test* "mongo-database?" #t
-       (mongo-database? *rs-db*))
+       (mongo-database? *r-db*))
 
 (test* "mongo-database-server" #t
-       (mongo? (mongo-database-server *rs-db*)))
+       (mongo? (mongo-database-server *r-db*)))
 
 (test* "mongo-database-name" *dn*
-       (mongo-database-name *rs-db*))
+       (mongo-database-name *r-db*))
 
 (test* "mongo-command" #t
-       (ok? (mongo-command *rs-db* (% "ping" 1))))
+       (mongo-ok? (mongo-command *r-db* '(("ping" . 1)))))
 
 (test* "mongo-drop-database" #t
-       (ok? (mongo-drop-database *rs-db*)))
+       (mongo-ok? (mongo-drop-database *r-db*)))
 
 (test* "mongo-get-last-error" #t
-       (ok? (mongo-get-last-error *rs-db*)))
+       (mongo-ok? (mongo-get-last-error *r-db*)))
 
 (test* "mongo-reset-error" #t
-       (ok? (mongo-reset-error *rs-db*)))
+       (mongo-ok? (mongo-reset-error *r-db*)))
 
 (test* "mongo-show-collections" #t
-       (list? (mongo-show-collections *rs-db*)))
+       (every bson-document? (mongo-show-collections *r-db*)))
 
 (test* "mongo-profiling-status" #t
-       (ok? (mongo-profiling-status *rs-db*)))
+       (mongo-ok? (mongo-profiling-status *r-db*)))
 
 (test* "mongo-get-profiling-level" #t
-       (number? (mongo-get-profiling-level *rs-db*)))
+       (number? (mongo-get-profiling-level *r-db*)))
 
 (test* "mongo-set-profiling-level" #t
-       (ok? (mongo-set-profiling-level *rs-db* 1)))
+       (mongo-ok? (mongo-set-profiling-level *r-db* 1)))
 
 (test* "mongo-show-profiling" #t
-       (list? (mongo-show-profiling *rs-db*)))
+       (every bson-document? (mongo-show-profiling *r-db*)))
 
 (test* "mongo-auth" (test-error <mongo-request-error>)
-       (mongo-auth *rs-db* *user* *pass*))
+       (mongo-auth *r-db* *user* *pass*))
 
 (test* "mongo-add-user" #t
-       (ok? (mongo-add-user *rs-db* *user* *pass* :safe #t)))
+       (mongo-ok? (mongo-add-user *r-db* *user* *pass* :safe #t)))
 
 (test* "mongo-remove-user" #t
-       (ok? (mongo-remove-user *rs-db* *user* :safe #t)))
+       (mongo-ok? (mongo-remove-user *r-db* *user* :safe #t)))
 
-(test* "mongo-collection" #t
-       (begin (set! *rs-col* (mongo-collection *rs-db* *cn*)) #t))
+(test* "mongo-collection" <mongo-collection>
+       (begin (set! *r-col* (mongo-collection *r-db* *cn*))
+              (class-of *r-col*)))
+
+(test* "mongo-collection validation" (test-error <mongo-validation-error>)
+       (mongo-collection *r-db* "$foo"))
 
 (test* "mongo-collection-database" #t
-       (mongo-database? (mongo-collection-database *rs-col*)))
+       (mongo-database? (mongo-collection-database *r-col*)))
 
 (test* "mongo-collection-name" *cn*
-       (mongo-collection-name *rs-col*))
+       (mongo-collection-name *r-col*))
 
 (test* "mongo-create-collection" #t
-       (ok? (mongo-create-collection *rs-col*)))
+       (mongo-ok? (mongo-create-collection *r-col*)))
 
 (test* "mongo-drop-collection" #t
-       (ok? (mongo-drop-collection *rs-col*)))
+       (mongo-ok? (mongo-drop-collection *r-col*)))
 
 (test* "mongo-insert1" #t
-       (ok? (mongo-insert1 *rs-col*
-                           (% "x" "foo")
-                           :safe #t)))
+       (mongo-ok? (mongo-insert1 *r-col* '(("x" . "foo")) :safe #t)))
 
 (test* "mongo-insert" #t
-       (ok? (mongo-insert *rs-col*
-                          (list (% "x" "bar") (% "x" "baz"))
-                          :safe #t)))
+       (mongo-ok? (mongo-insert *r-col*
+                                '((("x" . "bar")) (("x" . "baz")))
+                                :safe #t)))
 
 (test* "mongo-find1" "foo"
-       (alref (mongo-find1 *rs-col* (% "x" "foo") :slave #f) "x"))
+       (assoc-ref (mongo-find1 *r-col* '(("x" . "foo")) :slave #f)
+                  "x"))
 
 (test* "mongo-find" #t
-       (mongo-cursor? (mongo-find *rs-col* '())))
+       (every bson-document?
+              (mongo-find *r-col* '(("x" . (("$exists" . true)))))))
+
+(test* "mongo-find" #t
+       (mongo-cursor? (mongo-find *r-col* '(("x" . (("$exists" . true))))
+                                  :cursor #t)))
+
+(test* "mongo-find" #t
+       (every bson-document?
+              (mongo-cursor-all!
+               (mongo-find *r-col* '(("x" . (("$exists" . true))))
+                           :cursor #t))))
 
 (test* "mongo-update" #t
-       (ok? (mongo-update *rs-col*
-                          (% "x" "FOO")
-                          (% "$set" (% "x" "Foo"))
-                          :safe #t)))
+       (mongo-ok? (mongo-update *r-col*
+                                '(("x" . "FOO"))
+                                '(("$set" . (("x" . "Foo"))))
+                                :safe #t)))
 
 (test* "mongo-delete" #t
-       (ok? (mongo-delete *rs-col*
-                          (% "x" (% "$exists" 'true))
-                          :safe #t)))
+       (mongo-ok? (mongo-delete *r-col*
+                                '(("x" . (("$exists" . true))))
+                                :safe #t)))
 
 (test* "mongo-ensure-index" #t
-       (ok? (mongo-ensure-index *rs-col* (% "x" 1) :name *in* :safe #t)))
+       (mongo-ok?
+        (mongo-ensure-index *r-col* '(("x" . 1)) :name *index* :safe #t)))
 
 (test* "mongo-show-indexes" #t
-       (list? (mongo-show-indexes *rs-col*)))
+       (every bson-document? (mongo-show-indexes *r-col*)))
 
 (test* "mongo-drop-index" #t
-       (ok? (mongo-drop-index *rs-col* *in*)))
+       (mongo-ok? (mongo-drop-index *r-col* *index*)))
 
 (test* "mongo-drop-indexes" #t
-       (ok? (mongo-drop-indexes *rs-col*)))
+       (mongo-ok? (mongo-drop-indexes *r-col*)))
 
 (test* "mongo-reindex" #t
-       (ok? (mongo-reindex *rs-col*)))
+       (mongo-ok? (mongo-reindex *r-col*)))
 
 (test* "mongo-count" #t
-       (number? (mongo-count *rs-col*)))
+       (number? (mongo-count *r-col*)))
 
 (test* "mongo-distinct" #t
-       (vector? (mongo-distinct *rs-col* "x")))
+       (vector? (mongo-distinct *r-col* "x")))
 
 (test* "mongo-group" #t
-       (vector? (mongo-group *rs-col*
+       (vector? (mongo-group *r-col*
                              '()
                              (bson-code "function(doc,acc){acc.cnt++;}")
                              '(("cnt" . 0)))))
 
 (test* "mongo-map-reduce" #t
-       (ok? (mongo-map-reduce *rs-col*
-                              (bson-code "function() { emit(this.i, 1); }")
-                              (bson-code "function(k, vals) { return 1; }")
-                              :out (% "inline" 1))))
+       (mongo-ok?
+        (mongo-map-reduce *r-col*
+                          (bson-code "function() { emit(this.i, 1); }")
+                          (bson-code "function(k, vals) { return 1; }")
+                          :out '(("inline" . 1)))))
 
 (test* "mongo-dbref? 1" #t
        (mongo-dbref? '(("$ref" . "foo") ("$id" . "bar"))))
@@ -482,6 +536,6 @@
        (mongo-dbref "foo" "bar" "baz"))
 
 (test* "mongo-dbref-get" #f
-       (mongo-dbref-get *rs-db* (mongo-dbref "foo" "bar" "baz")))
+       (mongo-dbref-get *r-db* (mongo-dbref "foo" "bar" "baz")))
 
 (test-end)

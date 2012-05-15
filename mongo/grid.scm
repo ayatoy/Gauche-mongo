@@ -2,7 +2,6 @@
   (use gauche.record)
   (use gauche.uvector)
   (use gauche.vport)
-  (use util.list)
   (use mongo.util)
   (use mongo.bson)
   (use mongo.wire)
@@ -24,6 +23,7 @@
           <mongo-grid-output-port>
           open-mongo-grid-output-port
           call-with-mongo-grid-output-port))
+
 (select-module mongo.grid)
 
 ;;;; constant
@@ -57,12 +57,10 @@
     (make-mongo-grid db prefix files chunks)))
 
 (define (mongo-grid-find grid name :key (id #f) (old 0))
-  (mongo-cursor-next!
-   (mongo-find (mongo-grid-files grid)
+  (mongo-find1 (mongo-grid-files grid)
                (if id `(("_id" . ,id)) `(("filename" . ,name)))
-               :sort '(("uploadDate" . -1))
                :skip (if id 0 old)
-               :limit 1)))
+               :sort '(("uploadDate" . -1))))
 
 (define (mongo-grid-delete grid name :key (id #f))
   (let ([files  (mongo-grid-files grid)]
@@ -71,10 +69,9 @@
                 (let1 fid (assoc-ref file "_id")
                   (mongo-delete files `(("_id" . ,fid)))
                   (mongo-delete chunks `(("files_id" . ,fid)))))
-              (mongo-cursor-all!
-               (mongo-find files
-                           (if id `(("_id" . ,id)) `(("filename" . ,name)))
-                           :select '(("_id" . 1)))))))
+              (mongo-find files
+                          (if id `(("_id" . ,id)) `(("filename" . ,name)))
+                          :select '(("_id" . 1))))))
 
 (define-class <mongo-grid-port-base> ()
   ((id           :init-keyword :id)
@@ -100,7 +97,8 @@
            [cursor (mongo-find (mongo-grid-chunks grid)
                                `(("files_id" . ,fid))
                                :select '(("data" . 1))
-                               :sort '(("n" . 1)))])
+                               :sort '(("n" . 1))
+                               :cursor #t)])
       (make <mongo-grid-input-port>
         :id           fid
         :name         (assoc-ref file "filename")
@@ -112,13 +110,13 @@
         :aliases      (assoc-ref file "aliases")
         :metadata     (assoc-ref file "metadata")
         :buffer-size  csize
-        :fill         (^[target]
-                        (if-let1 chunk (mongo-cursor-next! cursor)
-                          (let1 data (bson-binary-bytes(assoc-ref chunk "data"))
-                            (u8vector-copy! target 0 data)
-                            (uvector-size data))
-                          0))
-        :close        (^[] (mongo-cursor-kill cursor))))
+        :fill  (^[target]
+                 (if-let1 chunk (mongo-cursor-next! cursor)
+                   (let1 data (bson-binary-bytes (assoc-ref chunk "data"))
+                     (u8vector-copy! target 0 data)
+                     (uvector-size data))
+                   0))
+        :close (^[] (mongo-cursor-kill cursor))))
     (error <mongo-grid-error> :reason #f "couldn't open input file")))
 
 (define (call-with-mongo-grid-input-port grid name proc . opts)
@@ -172,14 +170,13 @@
                   (let1 fid (assoc-ref file "_id")
                     (mongo-delete files `(("_id" . ,fid)))
                     (mongo-delete chunks `(("files_id" . ,fid)))))
-                (mongo-cursor-all!
-                 (mongo-find
-                  files
-                  `(("filename" . ,(slot-ref port 'name))
-                    ("_id"      . (("$ne" . ,(slot-ref port 'id)))))
-                  :select '(("_id" . 1))
-                  :skip (if (or (eq? retain #f) (> 2 retain)) 0 (- retain 1))
-                  :sort '(("uploadDate" . -1))))))))
+                (mongo-find
+                 files
+                 `(("filename" . ,(slot-ref port 'name))
+                   ("_id"      . (("$ne" . ,(slot-ref port 'id)))))
+                 :select '(("_id" . 1))
+                 :skip (if (or (eq? retain #f) (> 2 retain)) 0 (- retain 1))
+                 :sort '(("uploadDate" . -1)))))))
 
 (define (mongo-grid-finalize! grid port retain)
   (flush port)
@@ -194,8 +191,8 @@
                                      :key (id #f)
                                           (chunk-size MONGO_GRID_CHUNK_SIZE)
                                           (content-type MONGO_GRID_CONTENT_TYPE)
-                                          aliases
-                                          metadata
+                                          (aliases (undefined))
+                                          (metadata (undefined))
                                           (retain #t))
   (when (and id (mongo-grid-find grid name :id id))
     (error <mongo-grid-error> :reason #f "couldn't open output file"))
