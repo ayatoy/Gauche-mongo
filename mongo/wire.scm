@@ -146,21 +146,20 @@
                          (condition-ref e 'message))])
     (let loop ([uv u8v] [size (uvector-size u8v)])
       (when (> size 0)
-        (let1 sent (socket-send socket uv)
-          (when (>= 0 sent)
-            (error <mongo-send-error> :reason #f "socket-send returned:" sent))
-          (loop (u8vector-copy uv sent) (- size sent)))))))
+        (let1 res (socket-send socket uv)
+          (when (>= 0 res)
+            (error <mongo-send-error> :reason #f "socket-send returned:" res))
+          (loop (uvector-alias <u8vector> uv res) (- size res)))))))
 
 (define (mongo-socket-recv! socket u8v)
   (guard (e [else (error <mongo-recv-error> :reason e
                          (condition-ref e 'message))])
-    (let loop ([uv u8v] [size (uvector-size u8v)] [recved 0])
+    (let loop ([uv u8v] [size (uvector-size u8v)])
       (when (> size 0)
-        (let1 sent (socket-recv! socket uv)
-          (when (>= 0 sent)
-            (error <mongo-recv-error> :reason #f "socket-recv! returned:" sent))
-          (u8vector-copy! u8v recved uv 0 sent)
-          (loop (u8vector-copy uv sent) (- size sent) (+ recved sent)))))))
+        (let1 res (socket-recv! socket uv)
+          (when (>= 0 res)
+            (error <mongo-recv-error> :reason #f "socket-recv! returned:" res))
+          (loop (uvector-alias <u8vector> uv res) (- size res)))))))
 
 (define (mongo-socket-connect address)
   (guard (e [(<system-error> e) (error <mongo-connect-error> :reason e
@@ -201,13 +200,11 @@
 
 (define (mongo-message-recv socket)
   (call-with-input-uvector
-      (let* ([len-vec (rlet1 u8v (make-u8vector BSON_INT32_SIZE)
-                        (mongo-socket-recv! socket u8v))]
-             [len (get-s32le len-vec 0)])
-        (rlet1 u8v (make-u8vector len)
-          (u8vector-copy! u8v 0 len-vec)
-          (u8vector-copy! u8v 4 (rlet1 u8v (make-u8vector (- len 4))
-                                  (mongo-socket-recv! socket u8v)))))
+      (let* ([lv (rlet1 u8v (make-u8vector 4) (mongo-socket-recv! socket u8v))]
+             [l  (get-s32le lv 0)])
+        (rlet1 u8v (make-u8vector l)
+          (u8vector-copy! u8v 0 lv)
+          (mongo-socket-recv! socket (uvector-alias <u8vector> u8v 4))))
     mongo-message-read-reply))
 
 (define (mongo-message-request socket ms)
