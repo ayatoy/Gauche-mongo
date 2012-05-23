@@ -424,5 +424,4 @@
    (^[yield]
      (let loop ()
        (if-let1 doc (mongo-cursor-next! cursor)
-         (begin (yield doc) (loop))
-         (eof-object))))))
+         (begin (yield doc) (loop)))))))
