@@ -732,6 +732,113 @@
 (test* "bson-part" '(("key" . "default"))
        (bson-part "key" (undefined) "default"))
 
+(let1 doc '(("k1" . "v1")
+            ("k2" . (("k3" . "v3")))
+            ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+            ("k4" . (("k5" . ()) ("k6" . "foo"))))
+
+  (test* "bson-copy" #t
+         (equal? doc (bson-copy doc)))
+
+  (test* "bson-copy" #f
+         (eq? doc (bson-copy doc)))
+
+  (test* "bson-delete" '(("k2" . (("k3" . "v3")))
+                         ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+                         ("k4" . (("k5" . ()) ("k6" . "foo"))))
+         (bson-delete doc "k1"))
+
+  (test* "bson-delete" '(("k1" . "v1")
+                         ("k2" . (("k3" . "v3")))
+                         ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+                         ("k4" . (("k5" . ()) ("k6" . "foo"))))
+         (bson-delete doc))
+
+  (test* "bson-delete" '(("k1" . "v1")
+                         ("k2" . (("k3" . "v3")))
+                         ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+                         ("k4" . (("k5" . ()) ("k6" . "foo"))))
+         (bson-delete doc "k2" "k3" "not-exists"))
+
+  (test* "bson-delete" '(("k1" . "v1")
+                         ("k2" . (("k3" . "v3")))
+                         ("k4" . (("k5" . ())))
+                         ("k4" . (("k5" . ()))))
+         (bson-delete doc "k4" "k6"))
+
+  (test* "bson-delete" '(("k1" . "v1")
+                         ("k2" . (("k3" . "v3")))
+                         ("k4" . (("k5" . ()) ("k6" . ())))
+                         ("k4" . (("k5" . ()) ("k6" . "foo"))))
+         (bson-delete doc "k4" "k6" "k7"))
+
+  (test* "bson-ref" "v1"
+         (bson-ref doc "k1"))
+
+  (test* "bson-ref" #f
+         (bson-ref doc "k2" "k3" "not-exists"))
+
+  (test* "bson-ref" '()
+         (bson-ref doc "k4" "k5"))
+
+  (test* "bson-ref" '(("k7" . "v7"))
+         (bson-ref doc "k4" "k6"))
+
+  (test* "bson-ref" #f
+         (bson-ref doc "not-exists"))
+
+  (test* "bson-set" '(("k1" . "v1")
+                      ("k2" . (("k3" . "v3")))
+                      ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+                      ("k4" . (("k5" . ()) ("k6" . "foo"))))
+         (bson-set doc "foo"))
+
+  (test* "bson-set" '(("k1" . "v1")
+                      ("k2" . (("k3" . "v3")))
+                      ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+                      ("k4" . (("k5" . ()) ("k6" . "foo"))))
+         (bson-set doc "k1" "k" "v"))
+
+  (test* "bson-set" '(("k1" . "foo")
+                      ("k2" . (("k3" . "v3")))
+                      ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+                      ("k4" . (("k5" . ()) ("k6" . "foo"))))
+         (bson-set doc "k1" "foo"))
+
+  (test* "bson-set" '(("k1" . "v1")
+                      ("k2" . (("k3" . "foo")))
+                      ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+                      ("k4" . (("k5" . ()) ("k6" . "foo"))))
+         (bson-set doc "k2" "k3" "foo"))
+
+  (test* "bson-set" '(("k1" . "v1")
+                      ("k2" . (("k3" . "v3")))
+                      ("k4" . (("k5" . (("k" . "v"))) ("k6" . (("k7" . "v7")))))
+                      ("k4" . (("k5" . (("k" . "v"))) ("k6" . "foo"))))
+         (bson-set doc "k4" "k5" "k" "v"))
+
+  (test* "bson-set" '(("k1" . "v1")
+                      ("k2" . (("k3" . "v3")))
+                      ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+                      ("k4" . (("k5" . ()) ("k6" . "foo")))
+                      ("k" . "v"))
+         (bson-set doc "k" "v"))
+
+  (test* "bson-delete$" '(("k2" . (("k3" . "v3")))
+                          ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+                          ("k4" . (("k5" . ()) ("k6" . "foo"))))
+         ((bson-delete$ "k1") doc))
+
+  (test* "bson-ref$" "v1"
+         ((bson-ref$ "k1") doc))
+
+  (test* "bson-set$" '(("k1" . "foo")
+                       ("k2" . (("k3" . "v3")))
+                       ("k4" . (("k5" . ()) ("k6" . (("k7" . "v7")))))
+                       ("k4" . (("k5" . ()) ("k6" . "foo"))))
+         ((bson-set$ "k1" "foo") doc))
+  )
+
 ;;;; array
 
 (test-section "array")

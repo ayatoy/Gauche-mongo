@@ -180,6 +180,13 @@
           write-bson-document
           read-bson-document
           bson-part
+          bson-copy
+          bson-delete
+          bson-ref
+          bson-set
+          bson-delete$
+          bson-ref$
+          bson-set$
           write-bson-array-prepare
           write-bson-array
           read-bson-array))
@@ -965,6 +972,84 @@
       '()
       `((,key . ,(boolean->bson-boolean default))))
     `((,key . ,(boolean->bson-boolean obj)))))
+
+(define (bson-copy doc)
+  (let recu ([doc doc])
+    (if (pair? doc)
+      (let1 el (car doc)
+        (cons (cons (car el) (recu (cdr el)))
+              (cdr doc)))
+      doc)))
+
+(define (bson-delete doc . keys)
+  (if (null? keys)
+    (bson-copy doc)
+    (let recu ([doc doc] [keys keys])
+      (cond [(eq? #f keys)
+             (if (pair? doc)
+               (let1 el (car doc)
+                 (cons (cons (car el) (recu (cdr el) #f))
+                       (recu (cdr doc) #f)))
+               doc)]
+            [(not (pair? doc)) doc]
+            [else (let* ([el (car doc)]
+                         [ek (car el)])
+                    (if (string=? ek (car keys))
+                      (let1 ks (cdr keys)
+                        (if (null? ks)
+                          (recu (cdr doc) keys)
+                          (cons (cons ek (recu (cdr el) ks))
+                                (recu (cdr doc) keys))))
+                      (cons (cons ek (recu (cdr el) #f))
+                            (recu (cdr doc) keys))))]))))
+
+(define (bson-ref doc . keys)
+  (let recu ([doc doc] [keys keys])
+    (cond [(null? keys) doc]
+          [(not (pair? doc)) #f]
+          [else (let1 el (car doc)
+                  (or (and (string=? (car el) (car keys))
+                           (recu (cdr el) (cdr keys)))
+                      (recu (cdr doc) keys)))])))
+
+(define (bson-set doc . keys&val)
+  (receive (keys val) (let loop ([args keys&val] [keys '()])
+                        (let1 rest (cdr args)
+                          (if (null? rest)
+                            (values (reverse keys) (car args))
+                            (loop rest (cons (car args) keys)))))
+    (if (null? keys)
+      (bson-copy doc)
+      (let recu ([doc doc] [keys keys] [exist #f])
+        (cond [(null? keys) val]
+              [(not keys)
+               (if (pair? doc)
+                 (let1 el (car doc)
+                   (cons (cons (car el) (recu (cdr el) #f #f))
+                         (recu (cdr doc) #f #f)))
+                 doc)]
+              [(not (pair? doc))
+               (if (and (not exist) (null? doc))
+                 (cons (cons (car keys) (recu doc (cdr keys) #f))
+                       doc)
+                 doc)]
+              [else
+               (let* ([el (car doc)]
+                      [ek (car el)]
+                      [e? (string=? ek (car keys))])
+                 (cons (if e?
+                         (cons ek (recu (cdr el) (cdr keys) #f))
+                         (cons ek (recu (cdr el) #f #f)))
+                       (recu (cdr doc) keys (or exist e?))))])))))
+
+(define (bson-delete$ . keys)
+  (^[doc] (apply bson-delete doc keys)))
+
+(define (bson-ref$ . keys)
+  (^[doc] (apply bson-ref doc keys)))
+
+(define (bson-set$ . keys&val)
+  (^[doc] (apply bson-set doc keys&val)))
 
 ;;;; array
 
