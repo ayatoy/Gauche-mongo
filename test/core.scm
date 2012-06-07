@@ -226,16 +226,44 @@
                (mongo-find *s-col* '(("x" . (("$exists" . true))))
                            :cursor #t))))
 
+(test* "mongo-update1" #t
+       (mongo-ok? (mongo-update1 *s-col*
+                                 '(("x" . "FOO"))
+                                 '(("$set" . (("x" . "Foo"))))
+                                 :safe #t)))
+
 (test* "mongo-update" #t
        (mongo-ok? (mongo-update *s-col*
                                 '(("x" . "FOO"))
                                 '(("$set" . (("x" . "Foo"))))
                                 :safe #t)))
 
+(test* "mongo-upsert1" #t
+       (mongo-ok? (mongo-upsert1 *s-col*
+                                 '(("x" . "FOO"))
+                                 '(("$set" . (("x" . "Foo"))))
+                                 :safe #t)))
+
+(test* "mongo-upsert" #t
+       (mongo-ok? (mongo-upsert *s-col*
+                                '(("x" . "FOO"))
+                                '(("$set" . (("x" . "Foo"))))
+                                :safe #t)))
+
+(test* "mongo-delete1" #t
+       (mongo-ok? (mongo-delete1 *s-col*
+                                 '(("x" . (("$exists" . true))))
+                                 :safe #t)))
+
 (test* "mongo-delete" #t
        (mongo-ok? (mongo-delete *s-col*
                                 '(("x" . (("$exists" . true))))
                                 :safe #t)))
+
+(test* "mongo-save" #t
+       (mongo-ok? (mongo-save *s-col*
+                              `(("x" . "foo"))
+                              :safe #t)))
 
 (test* "mongo-ensure-index" #t
        (mongo-ok?
@@ -477,16 +505,44 @@
                (mongo-find *r-col* '(("x" . (("$exists" . true))))
                            :cursor #t))))
 
+(test* "mongo-update1" #t
+       (mongo-ok? (mongo-update1 *r-col*
+                                 '(("x" . "FOO"))
+                                 '(("$set" . (("x" . "Foo"))))
+                                 :safe #t)))
+
 (test* "mongo-update" #t
        (mongo-ok? (mongo-update *r-col*
                                 '(("x" . "FOO"))
                                 '(("$set" . (("x" . "Foo"))))
                                 :safe #t)))
 
+(test* "mongo-upsert1" #t
+       (mongo-ok? (mongo-upsert1 *r-col*
+                                 '(("x" . "FOO"))
+                                 '(("$set" . (("x" . "Foo"))))
+                                 :safe #t)))
+
+(test* "mongo-upsert" #t
+       (mongo-ok? (mongo-upsert *r-col*
+                                '(("x" . "FOO"))
+                                '(("$set" . (("x" . "Foo"))))
+                                :safe #t)))
+
+(test* "mongo-delete1" #t
+       (mongo-ok? (mongo-delete1 *r-col*
+                                 '(("x" . (("$exists" . true))))
+                                 :safe #t)))
+
 (test* "mongo-delete" #t
        (mongo-ok? (mongo-delete *r-col*
                                 '(("x" . (("$exists" . true))))
                                 :safe #t)))
+
+(test* "mongo-save" #t
+       (mongo-ok? (mongo-save *r-col*
+                              `(("x" . "foo"))
+                              :safe #t)))
 
 (test* "mongo-ensure-index" #t
        (mongo-ok?

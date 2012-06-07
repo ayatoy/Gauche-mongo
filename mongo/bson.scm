@@ -985,7 +985,7 @@
   (if (null? keys)
     (bson-copy doc)
     (let recu ([doc doc] [keys keys])
-      (cond [(eq? #f keys)
+      (cond [(not keys)
              (if (pair? doc)
                (let1 el (car doc)
                  (cons (cons (car el) (recu (cdr el) #f))

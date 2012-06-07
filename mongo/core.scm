@@ -59,8 +59,13 @@
           mongo-find
           mongo-insert1
           mongo-insert
+          mongo-update1
           mongo-update
+          mongo-upsert1
+          mongo-upsert
+          mongo-delete1
           mongo-delete
+          mongo-save
           mongo-ensure-index
           mongo-show-indexes
           mongo-drop-index
@@ -491,6 +496,9 @@
                        :w w
                        :wtimeout wtimeout)))
 
+(define (mongo-update1 col query update . opts)
+  (apply mongo-update col query update :single #t opts))
+
 (define (mongo-update col query update :key (upsert #f)
                                             (single #f)
                                             (safe #f)
@@ -514,6 +522,15 @@
                        :w w
                        :wtimeout wtimeout)))
 
+(define (mongo-upsert1 col query update . opts)
+  (apply mongo-update col query update :single #t :upsert #t opts))
+
+(define (mongo-upsert col query update . opts)
+  (apply mongo-update col query update :upsert #t opts))
+
+(define (mongo-delete1 col query . opts)
+  (apply mongo-delete col query :single #t opts))
+
 (define (mongo-delete col query :key (single #f)
                                      (safe #f)
                                      (fsync (undefined))
@@ -533,6 +550,11 @@
                        :j j
                        :w w
                        :wtimeout wtimeout)))
+
+(define (mongo-save col doc . opts)
+  (if-let1 id (bson-ref doc "_id")
+    (apply mongo-update col `(("_id" . ,id)) doc :upsert #t opts)
+    (apply mongo-insert col (list doc) opts)))
 
 (define (mongo-ensure-index col spec :key (name #f)
                                           (unique (undefined))
