@@ -612,6 +612,9 @@
                                           (drop-dups (undefined))
                                           (background (undefined))
                                           (sparse (undefined))
+                                          (min (undefined))
+                                          (max (undefined))
+                                          (bits (undefined))
                                           (safe #f)
                                           (fsync (undefined))
                                           (j (undefined))
@@ -629,7 +632,10 @@
                           ,@(bson-part "unique" unique)
                           ,@(bson-part "dropDups" drop-dups)
                           ,@(bson-part "background" background)
-                          ,@(bson-part "sparse" sparse)))
+                          ,@(bson-part "sparse" sparse)
+                          ,@(bson-part "min" min)
+                          ,@(bson-part "max" max)
+                          ,@(bson-part "bits" bits)))
                        :safe safe
                        :fsync fsync
                        :j j
