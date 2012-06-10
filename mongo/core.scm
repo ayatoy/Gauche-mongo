@@ -47,6 +47,9 @@
           mongo-auth
           mongo-add-user
           mongo-remove-user
+          mongo-add-function
+          mongo-remove-function
+          mongo-eval
           <mongo-collection>
           mongo-collection
           mongo-collection?
@@ -374,6 +377,54 @@
                        :j j
                        :w w
                        :wtimeout wtimeout)))
+
+(define (mongo-add-function db name code :key (safe #f)
+                                              (fsync (undefined))
+                                              (j (undefined))
+                                              (w (undefined))
+                                              (wtimeout (undefined)))
+  (let1 m (mongo-database-server db)
+    (mongo-available! m)
+    (mongo-node-update (mongo-ref m :slave #f)
+                       (mongo-database-name db)
+                       "system.js"
+                       `(("_id" . ,name))
+                       `(("_id" . ,name) ("value" . ,code))
+                       :upsert #t
+                       :safe safe
+                       :fsync fsync
+                       :j j
+                       :w w
+                       :wtimeout wtimeout)))
+
+(define (mongo-remove-function db name :key (safe #f)
+                                            (fsync (undefined))
+                                            (j (undefined))
+                                            (w (undefined))
+                                            (wtimeout (undefined)))
+  (let1 m (mongo-database-server db)
+    (mongo-available! m)
+    (mongo-node-delete (mongo-ref m :slave #f)
+                       (mongo-database-name db)
+                       "system.js"
+                       `(("_id" . ,name))
+                       :safe safe
+                       :fsync fsync
+                       :j j
+                       :w w
+                       :wtimeout wtimeout)))
+
+(define (mongo-eval db code :key (args (undefined))
+                                 (nolock (undefined)))
+  (let1 m (mongo-database-server db)
+    (mongo-available! m)
+    (assoc-ref (mongo-node-command
+                (mongo-ref m :slave #f)
+                (mongo-database-name db)
+                `(("$eval" . ,code)
+                  ,@(bson-part "args" args)
+                  ,@(bson-part "nolock" nolock)))
+               "retval")))
 
 ;;;; collection
 

@@ -181,6 +181,22 @@
 (test* "mongo-remove-user" #t
        (mongo-ok? (mongo-remove-user *s-db* *user* :safe #t)))
 
+(test* "mongo-add-function" #t
+       (mongo-ok? (mongo-add-function
+                   *s-db*
+                   "func"
+                   (bson-code "function(x){return x;}")
+                   :safe #t)))
+
+(test* "mongo-eval" "foo"
+       (mongo-eval *s-db* "func('foo')"))
+
+(test* "mongo-remove-function" #t
+       (mongo-ok? (mongo-remove-function *s-db* "func" :safe #t)))
+
+(test* "mongo-eval" (test-error <mongo-request-error>)
+       (mongo-eval *s-db* "func('foo')"))
+
 (test* "mongo-collection" <mongo-collection>
        (begin (set! *s-col* (mongo-collection *s-db* *cn*))
               (class-of *s-col*)))
@@ -459,6 +475,22 @@
 
 (test* "mongo-remove-user" #t
        (mongo-ok? (mongo-remove-user *r-db* *user* :safe #t)))
+
+(test* "mongo-add-function" #t
+       (mongo-ok? (mongo-add-function
+                   *r-db*
+                   "func"
+                   (bson-code "function(x){return x;}")
+                   :safe #t)))
+
+(test* "mongo-eval" "foo"
+       (mongo-eval *r-db* "func('foo')"))
+
+(test* "mongo-remove-function" #t
+       (mongo-ok? (mongo-remove-function *r-db* "func" :safe #t)))
+
+(test* "mongo-eval" (test-error <mongo-request-error>)
+       (mongo-eval *r-db* "func('foo')"))
 
 (test* "mongo-collection" <mongo-collection>
        (begin (set! *r-col* (mongo-collection *r-db* *cn*))
