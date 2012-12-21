@@ -122,14 +122,7 @@
 ;;;; namespace
 
 (define (mongo-ns-compose . args)
-  (call-with-output-string
-    (^[out] (fold (^[x d]
-                    (unless (string? x)
-                      (error <mongo-error> "string required, but got" x))
-                    (format out "~a~a" d x)
-                    ".")
-                  ""
-                  args))))
+  (string-join args "."))
 
 (define (mongo-ns-parse str)
   (guard (e [(<parse-error> e)
@@ -231,7 +224,7 @@
 
 (define $mongo-uri
   ($do [($optional ($string "mongodb://"))]
-       [auth $mongo-uri-auth]
+       [auth  $mongo-uri-auth]
        [addrs $mongo-uri-addresses]
        [path  $mongo-uri-path]
        ($return (list auth addrs path))))
