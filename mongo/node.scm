@@ -11,14 +11,12 @@
   (export <mongo-request-error>
           mongo-request-error?
           <mongo-node>
-          mongo-node
           mongo-node?
           mongo-node-address
           mongo-node-socket
           mongo-node-authed
           mongo-node-locking
           mongo-node-connect
-          mongo-node-connect*
           mongo-node-connect?
           mongo-node-disconnect!
           mongo-node-generate-id!
@@ -87,19 +85,16 @@
      (with-locking-mutex-recursively (mongo-node-mutex node)
        (^[] body ...))]))
 
-(define (mongo-node-connect address)
-  (make-mongo-node address
-                   (mongo-socket-connect address)
-                   (make-hash-table 'equal?)
-                   (make-counter (expt 2 32))
-                   (make-mutex)))
-
-(define (mongo-node-connect* address)
-  (guard (e [(<mongo-connect-error> e) #f])
-    (mongo-node-connect address)))
-
-(define (mongo-node str)
-  (mongo-node-connect (string->mongo-address str)))
+(define (mongo-node-connect address :optional if-connect-error)
+  (guard (e [(<mongo-connect-error> e)
+             (if (undefined? if-connect-error)
+               (raise e)
+               if-connect-error)])
+    (make-mongo-node address
+                     (mongo-socket-connect address)
+                     (make-hash-table 'equal?)
+                     (make-counter (expt 2 32))
+                     (make-mutex))))
 
 (define (mongo-node-connect? node)
   (mongo-node-locking node

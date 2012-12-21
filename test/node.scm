@@ -86,14 +86,11 @@
 (test* "mongo-node-connect" (test-error <mongo-connect-error>)
        (mongo-node-connect (string->mongo-address *host1*)))
 
-(test* "mongo-node-connect*" <mongo-node>
-       (class-of (mongo-node-connect* (string->mongo-address *host*))))
+(test* "mongo-node-connect" <mongo-node>
+       (class-of (mongo-node-connect (string->mongo-address *host*) #f)))
 
-(test* "mongo-node-connect*" #f
-       (mongo-node-connect* (string->mongo-address *host1*)))
-
-(test* "mongo-node" <mongo-node>
-       (class-of (mongo-node *host*)))
+(test* "mongo-node-connect" #f
+       (mongo-node-connect (string->mongo-address *host1*) #f))
 
 (test* "mongo-node?" #t
        (mongo-node? *node*))

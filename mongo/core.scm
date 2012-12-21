@@ -121,7 +121,7 @@
         (error <mongo-error> :reason #f "could not connect to server")
         (begin (sys-nanosleep MONGO_CHECK_INTERVAL)
                (loop seeds)))
-      (or (and-let* ([node (mongo-node-connect* (car addrs))]
+      (or (and-let* ([node (mongo-node-connect (car addrs) #f)]
                      [stat (mongo-node-ismaster node)]
                      [(mongo-node-disconnect! node)]
                      [(equal? (assoc-ref stat "setName") name)]
@@ -145,7 +145,7 @@
                  (error <mongo-error> :reason #f "could not connect to master")
                  (begin (sys-nanosleep MONGO_CHECK_INTERVAL)
                         (loop seeds #f #f)))))
-      (if-let1 node (mongo-node-connect* (car addrs))
+      (if-let1 node (mongo-node-connect (car addrs) #f)
         (let ([time (mongo-node-round-trip node)]
               [stat (mongo-node-ismaster node)])
           (if (equal? (assoc-ref stat "setName") name)
