@@ -9,7 +9,7 @@
 ;;;; prep
 
 (define *dn*   "gauche_mongo_test_database")
-(define *db*   (mongo-database (mongo "localhost") *dn*))
+(define *db*   (mongo-database (mongo-connect :host "localhost") *dn*))
 (define *fn*   "gauche_mongo_test_file")
 (define *grid* #f)
 

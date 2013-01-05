@@ -8,7 +8,6 @@
   (use mongo.wire)
   (use mongo.node)
   (export <mongo>
-          mongo
           mongo?
           mongo-master
           mongo-slave
@@ -19,6 +18,7 @@
           mongo-locking
           mongo-single?
           mongo-replica-set?
+          mongo-connect
           mongo-connect?
           mongo-disconnect!
           mongo-sync!
@@ -156,11 +156,49 @@
                    (loop (cdr addrs) master slave))))
         (loop (cdr addrs) master slave)))))
 
-(define (mongo-connect name seeds timeout)
-  (let* ([limit (and timeout (+ (current-millisecond) timeout))]
-         [hosts (if name (mongo-fetch-hosts name seeds limit) seeds)])
-    (receive (master slave) (mongo-fetch-nodes name hosts limit)
-      (make-mongo master slave hosts name timeout (make-mutex)))))
+(define (mongo-connect :key (uri #f)
+                            (user #f)
+                            (password #f)
+                            (host #f)
+                            (timeout MONGO_CONNECT_TIMEOUT)
+                            (replica-set #f)
+                            (database #f))
+  (define (param-ref params key)
+    (assoc-ref params key #f string-ci=?))
+  (define (host-spec->addr spec)
+    (cond [(string? spec) (string->mongo-address spec)]
+          [(or (mongo-address-inet? spec) (mongo-address-unix? spec)) spec]
+          [else (error <mongo-error> :reason spec "invalid host spec:" spec)]))
+  (receive (uri-user uri-pass uri-addrs uri-dbname uri-params)
+      (mongo-uri-parse (or uri "mongodb://"))
+    (let* ([user (or uri-user user)]
+           [pass (or uri-pass password)]
+           [seeds (let1 addrs (append uri-addrs
+                                      (map host-spec->addr
+                                           (cond [(list? host) host]
+                                                 [host (list host)]
+                                                 [else '()])))
+                    (if (null? addrs)
+                      (list (string->mongo-address "localhost"))
+                      addrs))]
+           [timeout (if-let1 val (param-ref uri-params "connectTimeoutMS")
+                      (and (not (string-ci=? val "false"))
+                           (x->integer val))
+                      timeout)]
+           [name (or (param-ref uri-params "replicaSet") replica-set)]
+           [dbname (or uri-dbname database)]
+           [limit (and timeout (+ (current-millisecond) timeout))]
+           [hosts (if name (mongo-fetch-hosts name seeds limit) seeds)])
+      (receive (master slave) (mongo-fetch-nodes name hosts limit)
+        (let1 m (make-mongo master slave hosts name timeout (make-mutex))
+          (when (and user pass)
+            (guard (e [(<mongo-request-error> e)
+                       (mongo-disconnect! m)
+                       (raise e)])
+              (mongo-auth (mongo-database m (or dbname "admin"))
+                          user
+                          pass)))
+          (if dbname (mongo-database m dbname) m))))))
 
 (define (mongo-connect? m)
   (mongo-locking m
@@ -201,21 +239,6 @@
     (if (and slave (mongo-replica-set? m))
       (or (mongo-slave m) (mongo-master m))
       (mongo-master m))))
-
-(define (mongo uri)
-  (define (param-ref alist str) (assoc-ref alist str #f string-ci=?))
-  (receive (user pass addrs db params) (mongo-uri-parse uri)
-    (let1 m (mongo-connect
-             (param-ref params "replicaSet")
-             addrs
-             (if-let1 timeout (param-ref params "connectTimeoutMS")
-               (and (not (string-ci=? timeout "false"))
-                    (x->integer timeout))
-               MONGO_CONNECT_TIMEOUT))
-      (rlet1 x (if db (mongo-database m db) m)
-        (when (and user pass)
-          (guard (e [(<mongo-request-error> e) (mongo-disconnect! m) (raise e)])
-            (mongo-auth (mongo-database m (or db "admin")) user pass)))))))
 
 (define (mongo-admin m query :key (slave #f))
   (mongo-available! m)

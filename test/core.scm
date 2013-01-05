@@ -40,8 +40,8 @@
 
 (test-section "single")
 
-(test* "mongo" <mongo>
-       (begin (set! *s* (mongo "localhost:27017"))
+(test* "mongo-connect" <mongo>
+       (begin (set! *s* (mongo-connect :host "localhost:27017"))
               (class-of *s*)))
 
 (test* "mongo?" #t
@@ -335,8 +335,12 @@
 
 (test-section "replica-set")
 
-(test* "mongo" <mongo>
-       (begin (set! *r* (mongo "localhost:27018,localhost:27019,localhost:27010/?replicaset=gauche_mongo_test_replica_set"))
+(test* "mongo-connect" <mongo>
+       (begin (set! *r* (mongo-connect
+                         :host '("localhost:27018"
+                                 "localhost:27019"
+                                 "localhost:27020")
+                         :replica-set "gauche_mongo_test_replica_set"))
               (class-of *r*)))
 
 (test* "mongo?" #t
